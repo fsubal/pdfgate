@@ -1,0 +1,153 @@
+[
+{
+  "name":"cats.Later",
+  "fields":[{"name":"value$lzy1"}]
+},
+{
+  "name":"com.sun.crypto.provider.AESCipher$General",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"java.lang.ClassValue"
+},
+{
+  "name":"java.lang.invoke.VarHandle",
+  "methods":[{"name":"releaseFence","parameterTypes":[] }]
+},
+{
+  "name":"java.security.SecureRandomParameters"
+},
+{
+  "name":"org.apache.commons.logging.LogFactory"
+},
+{
+  "name":"org.apache.commons.logging.impl.Jdk14Logger",
+  "methods":[{"name":"<init>","parameterTypes":["java.lang.String"] }, {"name":"setLogFactory","parameterTypes":["org.apache.commons.logging.LogFactory"] }]
+},
+{
+  "name":"org.apache.commons.logging.impl.Log4jApiLogFactory"
+},
+{
+  "name":"org.apache.commons.logging.impl.LogFactoryImpl",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"org.apache.commons.logging.impl.Slf4jLogFactory"
+},
+{
+  "name":"org.apache.commons.logging.impl.WeakHashtable",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"org.apache.logging.slf4j.SLF4JProvider"
+},
+{
+  "name":"org.apache.pdfbox.pdmodel.encryption.StandardSecurityHandler",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"pdfgate.analysis.Policy$",
+  "fields":[{"name":"given_ReadWriter_Policy$lzy1"}]
+},
+{
+  "name":"pdfgate.output.CryptoResult$",
+  "fields":[{"name":"derived$ReadWriter$lzy11"}]
+},
+{
+  "name":"pdfgate.output.ErrorBody$",
+  "fields":[{"name":"derived$ReadWriter$lzy17"}]
+},
+{
+  "name":"pdfgate.output.ErrorResult$",
+  "fields":[{"name":"derived$ReadWriter$lzy18"}]
+},
+{
+  "name":"pdfgate.output.Finding$",
+  "fields":[{"name":"derived$ReadWriter$lzy12"}]
+},
+{
+  "name":"pdfgate.output.FormField$",
+  "fields":[{"name":"derived$ReadWriter$lzy6"}]
+},
+{
+  "name":"pdfgate.output.FormsResult$",
+  "fields":[{"name":"derived$ReadWriter$lzy8"}]
+},
+{
+  "name":"pdfgate.output.InfoResult$",
+  "fields":[{"name":"derived$ReadWriter$lzy3"}]
+},
+{
+  "name":"pdfgate.output.Layer$",
+  "fields":[{"name":"derived$ReadWriter$lzy4"}]
+},
+{
+  "name":"pdfgate.output.LayersResult$",
+  "fields":[{"name":"derived$ReadWriter$lzy5"}]
+},
+{
+  "name":"pdfgate.output.Metadata$",
+  "fields":[{"name":"derived$ReadWriter$lzy2"}]
+},
+{
+  "name":"pdfgate.output.Permissions$",
+  "fields":[{"name":"derived$ReadWriter$lzy9"}]
+},
+{
+  "name":"pdfgate.output.ScanResult$",
+  "fields":[{"name":"derived$ReadWriter$lzy13"}]
+},
+{
+  "name":"pdfgate.output.SignatureInfo$",
+  "fields":[{"name":"derived$ReadWriter$lzy10"}]
+},
+{
+  "name":"pdfgate.output.Structure$",
+  "fields":[{"name":"derived$ReadWriter$lzy1"}]
+},
+{
+  "name":"pdfgate.output.TextResult$",
+  "fields":[{"name":"derived$ReadWriter$lzy16"}]
+},
+{
+  "name":"pdfgate.output.ValidateResult$",
+  "fields":[{"name":"derived$ReadWriter$lzy15"}]
+},
+{
+  "name":"pdfgate.output.ValidationIssue$",
+  "fields":[{"name":"derived$ReadWriter$lzy14"}]
+},
+{
+  "name":"pdfgate.output.Xfa$",
+  "fields":[{"name":"derived$ReadWriter$lzy7"}]
+},
+{
+  "name":"sun.misc.Unsafe",
+  "fields":[{"name":"theUnsafe"}],
+  "methods":[{"name":"invokeCleaner","parameterTypes":["java.nio.ByteBuffer"] }]
+},
+{
+  "name":"sun.security.provider.NativePRNG",
+  "methods":[{"name":"<init>","parameterTypes":[] }, {"name":"<init>","parameterTypes":["java.security.SecureRandomParameters"] }]
+},
+{
+  "name":"sun.security.provider.SHA2$SHA256",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"sun.security.provider.SHA5$SHA384",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"sun.security.provider.SHA5$SHA512",
+  "methods":[{"name":"<init>","parameterTypes":[] }]
+},
+{
+  "name":"upickle.default$",
+  "fields":[{"name":"ReadWriter$lzy1"}, {"name":"Reader$lzy1"}, {"name":"TaggedReadWriter$lzy1"}, {"name":"TaggedReader$lzy1"}, {"name":"TaggedWriter$lzy1"}, {"name":"Writer$lzy1"}, {"name":"transform$lzy1"}, {"name":"upickle$implicits$Readers$$JavaReader$lzy1"}, {"name":"upickle$implicits$Writers$$JavaWriter$lzy1"}]
+},
+{
+  "name":"upickle.implicits.ReadersVersionSpecific$CaseClassReader3V2",
+  "fields":[{"name":"$1$$lzy1"}, {"name":"hasFlattenOnMap$lzy1"}]
+}
+]

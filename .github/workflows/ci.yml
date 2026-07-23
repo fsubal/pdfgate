@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: pdfgate-linux-x86_64
+          - os: ubuntu-24.04-arm
+            artifact: pdfgate-linux-aarch64
+          - os: macos-latest
+            artifact: pdfgate-macos-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: VirtusLab/scala-cli-setup@v1
+        with:
+          jvm: graalvm-community:21.0.2
+
+      - name: Build patched pdfbox jar
+        run: scala-cli run tools/patch-pdfbox.scala
+
+      - name: Run tests (JVM)
+        run: scala-cli test .
+
+      - name: Build native binary
+        run: scala-cli --power package --native-image . -f -o ${{ matrix.artifact }}
+
+      - name: Smoke test native binary
+        run: scripts/smoke.sh ./${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Attach binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*/*
