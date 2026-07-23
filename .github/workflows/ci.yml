@@ -38,6 +38,13 @@ jobs:
       - name: Smoke test native binary
         run: scripts/smoke.sh ./${{ matrix.artifact }}
 
+      - name: Cross-check against poppler
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -qq -y poppler-utils
+          scala-cli run . --main-class pdfgate.testkit.GenFixtures -- fixtures
+          python3 scripts/poppler_compare.py ./${{ matrix.artifact }} fixtures
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
