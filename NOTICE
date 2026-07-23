@@ -1,0 +1,70 @@
+pdfgate
+Copyright 2026 fsubal
+
+This product includes software developed by third parties as listed below.
+The distributed binaries statically link these dependencies, so the notices
+below apply to the released binaries as well as to the source tree.
+See THIRD-PARTY-NOTICES.md for the full inventory and license texts.
+
+---
+
+Apache PDFBox
+Copyright 2002-2026 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+Based on source code contributed to the original PDFBox project.
+Copyright (c) 2002-2007, www.pdfbox.org
+
+Includes the Adobe Glyph List
+Copyright 1997, 1998, 2002, 2007, 2010 Adobe Systems Incorporated.
+
+Includes the Zapf Dingbats Glyph List
+Copyright 2002, 2010 Adobe Systems Incorporated.
+
+Includes the Bidi Mirroring Glyph Property (BidiMirroring-8.0.0.txt)
+Copyright 1991-2015 Unicode, Inc.
+
+Includes parts of TwelveMonkeys ImageIO
+Copyright 2008-2016 Harald Kuhr
+
+Includes the CMYK ICC-profile (CGATS001Compat-v2-micro.icc)
+https://github.com/saucecontrol/Compact-ICC-Profiles
+Released to the public domain under the Creative Commons CC0 license by
+Clinton Ingram, saucecontrol
+
+Includes the Liberation Fonts (LiberationSans-Regular.ttf), licensed under
+the SIL Open Font License, Version 1.1:
+   Digitized data copyright (c) 2010 Google Corporation
+      with Reserved Font Arimo, Tinos and Cousine.
+   Copyright (c) 2012 Red Hat, Inc.
+      with Reserved Font Name Liberation.
+
+---
+
+Apache FontBox
+Copyright 2008-2026 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+Based on source code contributed to the original FontBox project.
+Copyright (c) 2006-2007, www.fontbox.org
+
+Includes the Script Property (Scripts-10.0.0.txt)
+Copyright 2017 Unicode, Inc.
+
+---
+
+Apache PDFBox io
+Copyright 2002-2026 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+---
+
+Apache Commons Logging
+Copyright 2001-2025 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (https://www.apache.org/).

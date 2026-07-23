@@ -220,3 +220,9 @@ pdfgate は例外を正規化し解析専用（レンダリングなし）です
 - 可能ならサンドボックス（コンテナ、seccomp）内で実行する
 
 `text` は `--max-chars`（デフォルト 1,000,000）で出力量を制限します。
+
+## ライセンス
+
+[Apache License 2.0](LICENSE)
+
+中核となる Apache PDFBox / FontBox が Apache-2.0 であり、ネイティブバイナリはそれらを静的リンクして同梱するため、同じライセンスに揃えています。配布バイナリを再頒布する場合は、[`LICENSE`](LICENSE)・[`NOTICE`](NOTICE)・[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) を添付してください（Apache-2.0 第 4 条および MIT 依存の著作権表示要件）。同梱される依存とそのライセンスの一覧は [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) にあります。

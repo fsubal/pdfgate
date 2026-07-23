@@ -103,10 +103,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
-      - name: Attach binaries to release
+      # The binaries statically link Apache-2.0 and MIT dependencies, so the
+      # license texts have to travel with them.
+      - name: Attach binaries and license texts to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*/*
+          files: |
+            dist/*/*
+            LICENSE
+            NOTICE
+            THIRD-PARTY-NOTICES.md
