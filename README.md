@@ -61,6 +61,20 @@ scala-cli --power package --native-image . -o pdfgate
 scripts/smoke.sh ./pdfgate
 ```
 
+### 完全静的リンク (musl) — scratch コンテナ向け
+
+Linux x86_64 に限り、libc 非依存の完全静的バイナリを作れます（Releases の `pdfgate-linux-x86_64-static`）。glibc のないコンテナ（scratch / distroless / busybox / alpine）でそのまま動きます:
+
+```sh
+scala-cli --power package --assembly . -o pdfgate-assembly.jar --preamble=false
+docker run --rm -v "$PWD:/work" -w /work \
+  ghcr.io/graalvm/native-image-community:21-muslib \
+  -jar pdfgate-assembly.jar --static --libc=musl --no-fallback -H:+AddAllCharsets \
+  -o pdfgate-linux-x86_64-static
+```
+
+musl 静的イメージは GraalVM の制約で linux-amd64 のみです（aarch64 は通常の動的リンク版を使ってください）。
+
 ### なぜ patched jar が必要か
 
 PDFBox の `PDDocument` は static initializer でレンダリング用の AWT カラースペースをウォームアップしますが、GraalVM native-image の AWT サポートは Linux 限定のため macOS でバイナリが起動しなくなります。pdfgate はレンダリングを行わないので、`tools/patch-pdfbox.scala` が ASM でこのウォームアップブロックだけをバイトコードから除去します（`RESERVE_BYTE_RANGE` / `LOG` などのフィールド初期化は保持）。これにより AWT が完全に到達不能になり、全プラットフォームで同一の挙動になります。

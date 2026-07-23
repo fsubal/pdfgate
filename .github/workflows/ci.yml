@@ -43,9 +43,48 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
+  # Fully static (musl) x86_64 binary: runs in scratch/distroless containers.
+  # musl static images are only supported by GraalVM on linux-amd64, hence a
+  # separate job using the official muslib builder image instead of the matrix.
+  static-musl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: VirtusLab/scala-cli-setup@v1
+        with:
+          jvm: graalvm-community:21.0.2
+          power: true
+
+      - name: Build patched pdfbox jar
+        run: scala-cli run tools/patch-pdfbox.scala
+
+      - name: Build assembly jar
+        run: scala-cli --power package --assembly . -o pdfgate-assembly.jar --preamble=false
+
+      - name: Build static native image (musl)
+        run: >
+          docker run --rm -v "$PWD:/work" -w /work -u "$(id -u):$(id -g)" -e HOME=/tmp
+          ghcr.io/graalvm/native-image-community:21-muslib
+          -jar pdfgate-assembly.jar --static --libc=musl --no-fallback -H:+AddAllCharsets
+          -o pdfgate-linux-x86_64-static
+
+      - name: Smoke test static binary
+        run: scripts/smoke.sh ./pdfgate-linux-x86_64-static
+
+      - name: Verify the binary runs without glibc
+        run: |
+          scala-cli run . --main-class pdfgate.testkit.GenFixtures -- fixtures
+          docker run --rm -v "$PWD/fixtures:/fixtures" -v "$PWD/pdfgate-linux-x86_64-static:/pdfgate" \
+            busybox /pdfgate info /fixtures/simple.pdf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pdfgate-linux-x86_64-static
+          path: pdfgate-linux-x86_64-static
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, static-musl]
     runs-on: ubuntu-latest
     permissions:
       contents: write
