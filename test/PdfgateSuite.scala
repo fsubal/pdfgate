@@ -71,6 +71,16 @@ class PdfgateSuite extends munit.FunSuite:
     assertEquals(r.findings, Seq.empty)
   }
 
+  corpus.test("image-bearing PDF is parsed, scans clean, and text still extracts") { dir =>
+    val file = File(dir, "with-image.pdf")
+    val scan = analyzed(file)(Scan.run)
+    assertEquals(scan.findings, Seq.empty)
+    val text = analyzed(file)(Text.extract(_, None, 1000))
+    assert(text.text.contains("Hello from pdfgate fixtures"))
+    val Right(v) = Validate.run(file, None, Policy()): @unchecked
+    assert(v.ok)
+  }
+
   corpus.test("validate passes a clean file") { dir =>
     val r = Validate.run(File(dir, "simple.pdf"), None, Policy())
     assertEquals(r.map(_.ok), Right(true))

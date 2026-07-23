@@ -82,6 +82,20 @@ object Fixtures:
     doc.getPage(0).getAnnotations.add(link)
     save(doc, dir, "with-uri.pdf")
 
+  /** Image generation uses AWT (BufferedImage), which is fine here: fixtures are
+    * always generated on the JVM. Analyzing the result with the AWT-free native
+    * binary is exactly the regression this fixture exists to cover.
+    */
+  def withImage(dir: File): File =
+    val doc = baseDoc()
+    val bimg = java.awt.image.BufferedImage(8, 8, java.awt.image.BufferedImage.TYPE_INT_RGB)
+    for x <- 0 until 8; y <- 0 until 8 do bimg.setRGB(x, y, 0xff8800)
+    val image = org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, bimg)
+    val cs = PDPageContentStream(doc, doc.getPage(0), PDPageContentStream.AppendMode.APPEND, true)
+    cs.drawImage(image, 100, 600, 64, 64)
+    cs.close()
+    save(doc, dir, "with-image.pdf")
+
   def encrypted(dir: File): File =
     val doc = baseDoc()
     val policy = StandardProtectionPolicy("owner-secret", "user-secret", AccessPermission())
@@ -97,7 +111,7 @@ object Fixtures:
   def all(dir: File): Seq[File] =
     dir.mkdirs()
     val intact = simple(dir)
-    Seq(intact, withJs(dir), withLayers(dir), withForm(dir), withAttachment(dir), withUri(dir), encrypted(dir), broken(dir, intact))
+    Seq(intact, withJs(dir), withLayers(dir), withForm(dir), withAttachment(dir), withUri(dir), withImage(dir), encrypted(dir), broken(dir, intact))
 
 object GenFixtures:
   def main(args: Array[String]): Unit =
