@@ -81,6 +81,24 @@ class PdfgateSuite extends munit.FunSuite:
     assert(v.ok)
   }
 
+  corpus.test("Japanese and unusual characters survive extraction, metadata, and validation") { dir =>
+    val file = File(dir, "with-japanese.pdf")
+    val text = analyzed(file)(Text.extract(_, None, 1000))
+    assert(text.text.contains("日本語のテキスト"), text.text)
+    assert(text.text.contains("吾輩は猫である"), text.text)
+    // Shift_JIS 0x5C-tail characters, enclosed numerics, a ligature, and a non-BMP emoji
+    assert(text.text.contains("ソ能表"), text.text)
+    assert(text.text.contains("①②③"), text.text)
+    // the ﬁ ligature is expanded to "fi" by the stripper's Unicode normalization
+    assert(text.text.contains("fiΩ🎌"), text.text)
+    val info = analyzed(file)(doc => Analyze.info(file, doc, StructureScan.scan(file)))
+    assertEquals(info.metadata.flatMap(_.title), Some("日本語タイトル（検証用）"))
+    val scan = analyzed(file)(Scan.run)
+    assertEquals(scan.findings, Seq.empty)
+    val Right(v) = Validate.run(file, None, Policy()): @unchecked
+    assert(v.ok)
+  }
+
   corpus.test("validate passes a clean file") { dir =>
     val r = Validate.run(File(dir, "simple.pdf"), None, Policy())
     assertEquals(r.map(_.ok), Right(true))

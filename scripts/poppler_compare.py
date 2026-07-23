@@ -72,12 +72,26 @@ def compare_text(binary: str, path: Path) -> None:
     report(path.name, "text", normalize(ours), normalize(poppler))
 
 
+def compare_text_contains(binary: str, path: Path, needle: str) -> None:
+    # containment rather than equality: the two tools differ on ligature
+    # normalization (pdfgate expands ﬁ -> fi, poppler keeps it)
+    poppler = subprocess.run(
+        ["pdftotext", "-q", str(path), "-"], capture_output=True, text=True, timeout=30
+    ).stdout
+    ours = json.loads(
+        subprocess.run([binary, "text", str(path)], capture_output=True, text=True, timeout=30).stdout
+    )["text"]
+    report(path.name, "pdfgate text contains needle", needle in ours, True)
+    report(path.name, "poppler text contains needle", needle in poppler, True)
+
+
 def main() -> None:
     binary, fixtures = sys.argv[1], Path(sys.argv[2])
     for pdf in sorted(fixtures.glob("*.pdf")):
         password = "user-secret" if pdf.name == "encrypted.pdf" else None
         compare_file(binary, pdf, password)
     compare_text(binary, fixtures / "simple.pdf")
+    compare_text_contains(binary, fixtures / "with-japanese.pdf", "日本語のテキスト：吾輩は猫である。")
     if failures:
         print(f"{failures} mismatch(es)")
         sys.exit(1)

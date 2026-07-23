@@ -96,6 +96,94 @@ object Fixtures:
     cs.close()
     save(doc, dir, "with-image.pdf")
 
+  /** Japanese and other non-Latin text. Built at the COS level as a Type0
+    * (Identity-H) font carrying a ToUnicode CMap but no embedded glyphs — the
+    * shape subset-font PDFs in the wild have, where extraction can only rely on
+    * ToUnicode. Covers predefined-CMap resources in the native binary, non-BMP
+    * surrogate pairs, and non-ASCII JSON output (metadata title).
+    */
+  val japaneseText = "日本語のテキスト：吾輩は猫である。①②③ ソ能表〜 ﬁΩ🎌"
+
+  def withJapanese(dir: File): File =
+    import org.apache.pdfbox.cos.*
+    import org.apache.pdfbox.pdmodel.common.PDStream
+    val doc = baseDoc()
+    doc.getDocumentInformation.setTitle("日本語タイトル（検証用）")
+    val page = doc.getPage(0)
+
+    val codePoints = japaneseText.codePoints().toArray
+    val bfchars = codePoints.zipWithIndex
+      .map((cp, i) =>
+        val dst = String(Character.toChars(cp)).getBytes("UTF-16BE").map(b => f"$b%02X").mkString
+        f"<${i + 1}%04X> <$dst>")
+      .mkString("\n")
+    val cmap =
+      s"""/CIDInit /ProcSet findresource begin
+         |12 dict begin
+         |begincmap
+         |/CMapName /pdfgate-ToUnicode def
+         |/CMapType 2 def
+         |1 begincodespacerange
+         |<0000> <FFFF>
+         |endcodespacerange
+         |${codePoints.length} beginbfchar
+         |$bfchars
+         |endbfchar
+         |endcmap
+         |CMapName currentdict /CMap defineresource pop
+         |end
+         |end""".stripMargin
+    val toUnicode = PDStream(doc, ByteArrayInputStream(cmap.getBytes("US-ASCII")))
+
+    val descriptor = COSDictionary()
+    descriptor.setItem(COSName.TYPE, COSName.FONT_DESC)
+    descriptor.setName(COSName.FONT_NAME, "PdfgateNoGlyphs")
+    descriptor.setInt(COSName.FLAGS, 4)
+    val bbox = COSArray()
+    Seq(0, -120, 1000, 880).foreach(v => bbox.add(COSInteger.get(v)))
+    descriptor.setItem(COSName.FONT_BBOX, bbox)
+    descriptor.setInt(COSName.ITALIC_ANGLE, 0)
+    descriptor.setInt(COSName.ASCENT, 880)
+    descriptor.setInt(COSName.DESCENT, -120)
+    descriptor.setInt(COSName.CAP_HEIGHT, 700)
+    descriptor.setInt(COSName.STEM_V, 80)
+
+    val cidSystemInfo = COSDictionary()
+    cidSystemInfo.setString(COSName.REGISTRY, "Adobe")
+    cidSystemInfo.setString(COSName.ORDERING, "Identity")
+    cidSystemInfo.setInt(COSName.SUPPLEMENT, 0)
+
+    val cidFont = COSDictionary()
+    cidFont.setItem(COSName.TYPE, COSName.FONT)
+    cidFont.setItem(COSName.SUBTYPE, COSName.getPDFName("CIDFontType2"))
+    cidFont.setName(COSName.BASE_FONT, "PdfgateNoGlyphs")
+    cidFont.setItem(COSName.CIDSYSTEMINFO, cidSystemInfo)
+    cidFont.setInt(COSName.DW, 1000)
+    cidFont.setItem(COSName.FONT_DESC, descriptor)
+
+    val font = COSDictionary()
+    font.setItem(COSName.TYPE, COSName.FONT)
+    font.setItem(COSName.SUBTYPE, COSName.getPDFName("Type0"))
+    font.setName(COSName.BASE_FONT, "PdfgateNoGlyphs")
+    font.setItem(COSName.ENCODING, COSName.IDENTITY_H)
+    val descendants = COSArray()
+    descendants.add(cidFont)
+    font.setItem(COSName.DESCENDANT_FONTS, descendants)
+    font.setItem(COSName.TO_UNICODE, toUnicode)
+
+    page.getResources.getCOSObject
+      .getCOSDictionary(COSName.FONT)
+      .setItem(COSName.getPDFName("Fjp"), font)
+
+    val codes = (1 to codePoints.length).map(i => f"$i%04X").mkString
+    val ops = s"BT /Fjp 12 Tf 72 690 Td <$codes> Tj ET"
+    val extra = PDStream(doc, ByteArrayInputStream(ops.getBytes("US-ASCII")))
+    val contents = COSArray()
+    contents.add(page.getCOSObject.getItem(COSName.CONTENTS))
+    contents.add(extra.getCOSObject)
+    page.getCOSObject.setItem(COSName.CONTENTS, contents)
+    save(doc, dir, "with-japanese.pdf")
+
   def encrypted(dir: File): File =
     val doc = baseDoc()
     val policy = StandardProtectionPolicy("owner-secret", "user-secret", AccessPermission())
@@ -111,7 +199,7 @@ object Fixtures:
   def all(dir: File): Seq[File] =
     dir.mkdirs()
     val intact = simple(dir)
-    Seq(intact, withJs(dir), withLayers(dir), withForm(dir), withAttachment(dir), withUri(dir), withImage(dir), encrypted(dir), broken(dir, intact))
+    Seq(intact, withJs(dir), withLayers(dir), withForm(dir), withAttachment(dir), withUri(dir), withImage(dir), withJapanese(dir), encrypted(dir), broken(dir, intact))
 
 object GenFixtures:
   def main(args: Array[String]): Unit =

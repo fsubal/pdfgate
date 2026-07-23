@@ -11,7 +11,9 @@
   }, {
     "pattern":"\\Qcommons-logging.properties\\E"
   }, {
-    "pattern":"\\Qorg/apache/pdfbox/resources/afm/Helvetica.afm\\E"
+    "pattern":"org/apache/fontbox/cmap/.*"
+  }, {
+    "pattern":"org/apache/pdfbox/resources/afm/.*\\.afm"
   }, {
     "pattern":"\\Qorg/apache/pdfbox/resources/glyphlist/additional.txt\\E"
   }, {
