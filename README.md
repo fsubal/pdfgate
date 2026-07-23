@@ -81,6 +81,10 @@ scala-cli run . --jvm graalvm-community:21.0.2 \
 
 JVM 実行と native 実行の JSON が一致することは `scripts/smoke.sh` が担保します。
 
+## 組み込み例
+
+[`examples/`](examples/) に、S3 + 隔離 Lambda での検査と Rails / ActiveStorage のアップロードバリデーションのサンプルがあります。
+
 ## 信頼できない入力に対する運用上の注意
 
 pdfgate は例外を正規化し解析専用（レンダリングなし）ですが、意図的に細工された PDF は CPU・メモリを浪費させる可能性があります。サーバーサイドでは必ず:

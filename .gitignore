@@ -1,6 +1,6 @@
 .scala-build/
 .bsp/
-lib/
-fixtures/
-pdfgate.bin
-pdfgate-*
+/lib/
+/fixtures/
+/pdfgate.bin
+/pdfgate-*
