@@ -24,6 +24,7 @@ jobs:
       - uses: VirtusLab/scala-cli-setup@v1
         with:
           jvm: graalvm-community:21.0.2
+          power: true
 
       - name: Build patched pdfbox jar
         run: scala-cli run tools/patch-pdfbox.scala
