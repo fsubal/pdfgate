@@ -1,6 +1,6 @@
 # pdfgate 利用例
 
-`validate` の JSON 出力と exit code（0 = OK / 1 = ポリシー違反 / 2 = 破損・解析不能 / 3 = 使用法エラー）を前提にした組み込み例です。
+`validate` の JSON 出力と exit code（0 = OK / 1 = ポリシー違反 / 2 = 破損・解析不能 / 3 = 使用法エラー）を前提にした組み込み例です。出力の構造は [`../schemas/`](../schemas/) の JSON Schema を参照してください。
 
 - [`lambda-s3/`](lambda-s3/) — S3 にアップロードされた PDF を、隔離された Lambda（コンテナイメージ）内で検査し、結果に応じてタグ付け・隔離バケットへ移動する
 - [`rails-activestorage/`](rails-activestorage/) — Rails で ActiveStorage に添付する前に、モデルのバリデーションとして pdfgate を実行する
