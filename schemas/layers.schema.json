@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fsubal/pdfgate/main/schemas/layers.schema.json",
+  "title": "pdfgate layers result",
+  "description": "stdout of `pdfgate layers <file>` on exit code 0. Lists optional content groups (OCGs).",
+  "type": "object",
+  "required": ["present", "count", "layers"],
+  "additionalProperties": false,
+  "properties": {
+    "present": { "type": "boolean", "description": "Whether the document declares optional content (/OCProperties)" },
+    "count": { "type": "integer" },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "enabled"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean", "description": "Default visibility state" }
+        }
+      }
+    }
+  }
+}

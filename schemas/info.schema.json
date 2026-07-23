@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fsubal/pdfgate/main/schemas/info.schema.json",
+  "title": "pdfgate info result",
+  "description": "stdout of `pdfgate info <file>` on exit code 0. When the document is password-protected and no valid --password was given, passwordRequired is true and version/pages/metadata/xmpPresent are null (structure is still byte-level and always present).",
+  "type": "object",
+  "required": ["file", "version", "pages", "encrypted", "passwordRequired", "metadata", "xmpPresent", "structure"],
+  "additionalProperties": false,
+  "properties": {
+    "file": { "type": "string", "description": "Path as given on the command line" },
+    "version": { "type": ["string", "null"], "description": "Effective PDF version, e.g. \"1.6\"" },
+    "pages": { "type": ["integer", "null"] },
+    "encrypted": { "type": "boolean" },
+    "passwordRequired": { "type": "boolean" },
+    "metadata": {
+      "oneOf": [{ "$ref": "#/$defs/metadata" }, { "type": "null" }]
+    },
+    "xmpPresent": { "type": ["boolean", "null"], "description": "Whether an XMP metadata stream exists in the catalog" },
+    "structure": { "$ref": "#/$defs/structure" }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "description": "Document information dictionary. Every field is null when absent.",
+      "required": ["title", "author", "subject", "keywords", "creator", "producer", "creationDate", "modificationDate"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": ["string", "null"] },
+        "author": { "type": ["string", "null"] },
+        "subject": { "type": ["string", "null"] },
+        "keywords": { "type": ["string", "null"] },
+        "creator": { "type": ["string", "null"] },
+        "producer": { "type": ["string", "null"] },
+        "creationDate": { "type": ["string", "null"], "description": "ISO-8601 instant, e.g. \"2026-07-23T10:00:00Z\"" },
+        "modificationDate": { "type": ["string", "null"], "description": "ISO-8601 instant" }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "description": "Byte-level file structure, computed without parsing the document",
+      "required": ["fileSizeBytes", "headerVersion", "bytesBeforeHeader", "eofMarkers", "incrementalUpdates", "bytesAfterLastEof", "objectCount"],
+      "additionalProperties": false,
+      "properties": {
+        "fileSizeBytes": { "type": "integer" },
+        "headerVersion": { "type": ["string", "null"], "description": "Version from the %PDF- header, null if no header was found" },
+        "bytesBeforeHeader": { "type": "integer", "description": "Junk bytes before %PDF-" },
+        "eofMarkers": { "type": "integer", "description": "Number of %%EOF markers" },
+        "incrementalUpdates": { "type": "integer", "description": "eofMarkers - 1, i.e. saved-over revisions" },
+        "bytesAfterLastEof": { "type": "integer", "description": "Non-whitespace bytes after the final %%EOF" },
+        "objectCount": { "type": ["integer", "null"], "description": "Cross-reference table size; null when the document could not be opened" }
+      }
+    }
+  }
+}

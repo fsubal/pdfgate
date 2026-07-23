@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fsubal/pdfgate/main/schemas/forms.schema.json",
+  "title": "pdfgate forms result",
+  "description": "stdout of `pdfgate forms <file>` on exit code 0. AcroForm field tree and XFA presence.",
+  "type": "object",
+  "required": ["hasAcroForm", "fieldCount", "signatureFieldCount", "fields", "xfa"],
+  "additionalProperties": false,
+  "properties": {
+    "hasAcroForm": { "type": "boolean" },
+    "fieldCount": { "type": "integer" },
+    "signatureFieldCount": { "type": "integer", "description": "Fields with fieldType \"Sig\"" },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "fieldType", "required", "readOnly", "value"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "description": "Fully-qualified field name" },
+          "fieldType": { "type": "string", "description": "PDF field type: \"Tx\", \"Btn\", \"Ch\", \"Sig\", or \"(none)\" when missing" },
+          "required": { "type": "boolean" },
+          "readOnly": { "type": "boolean" },
+          "value": { "type": ["string", "null"], "description": "Current value; null when unset or empty" }
+        }
+      }
+    },
+    "xfa": {
+      "type": "object",
+      "required": ["present", "dynamic"],
+      "additionalProperties": false,
+      "properties": {
+        "present": { "type": "boolean" },
+        "dynamic": { "type": "boolean", "description": "True when the catalog sets /NeedsRendering (dynamic XFA)" }
+      }
+    }
+  }
+}

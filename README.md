@@ -29,6 +29,114 @@ Apache PDFBox ベースの PDF 検査 CLI。GraalVM native-image で単一バイ
 
 解析中の例外はすべて捕捉され、`{"error":{"code":"parse-failure",...}}` の JSON に正規化されます（exit 2）。
 
+## 出力 JSON
+
+各コマンドの出力は [`schemas/`](schemas/) に JSON Schema (draft 2020-12) として定義してあります。コード生成やレスポンス検証にそのまま使えます。
+
+| コマンド | スキーマ |
+|---|---|
+| `info` | [`schemas/info.schema.json`](schemas/info.schema.json) |
+| `layers` | [`schemas/layers.schema.json`](schemas/layers.schema.json) |
+| `forms` | [`schemas/forms.schema.json`](schemas/forms.schema.json) |
+| `crypto` | [`schemas/crypto.schema.json`](schemas/crypto.schema.json) |
+| `scan` | [`schemas/scan.schema.json`](schemas/scan.schema.json) |
+| `validate` | [`schemas/validate.schema.json`](schemas/validate.schema.json) |
+| `text` | [`schemas/text.schema.json`](schemas/text.schema.json) |
+| すべて (exit 2) | [`schemas/error.schema.json`](schemas/error.schema.json) |
+
+スキーマが実際の出力と一致することは `scripts/schema_check.py` が CI で検証しています（実バイナリの出力を全コマンド分バリデートするので、実装がずれたら CI が落ちます）。
+
+### 共通の約束
+
+- **すべてのキーは常に存在します。** 値がない場合はキーを省略せず `null` になります（`Option` は `null` に直列化）。
+- 文字列は UTF-8。日本語などの非 ASCII 文字はエスケープせずそのまま出力します。
+- `message` 系のフィールドは人間向けで、文言は予告なく変わります。プログラムから分岐する場合は `code` / `kind` / `severity` を使ってください。
+- exit code 3（使用法エラー、`--policy` の読み込み失敗）では stdout に JSON は出ません。診断は stderr に出ます。
+
+### 出力例
+
+<details>
+<summary><code>pdfgate info</code></summary>
+
+```json
+{
+  "file": "upload.pdf",
+  "version": "1.6",
+  "pages": 1,
+  "encrypted": false,
+  "passwordRequired": false,
+  "metadata": {
+    "title": "日本語タイトル（検証用）",
+    "author": null,
+    "subject": null,
+    "keywords": null,
+    "creator": null,
+    "producer": null,
+    "creationDate": null,
+    "modificationDate": null
+  },
+  "xmpPresent": false,
+  "structure": {
+    "fileSizeBytes": 2065,
+    "headerVersion": "1.6",
+    "bytesBeforeHeader": 0,
+    "eofMarkers": 1,
+    "incrementalUpdates": 0,
+    "bytesAfterLastEof": 0,
+    "objectCount": 15
+  }
+}
+```
+
+パスワード不明の暗号化 PDF では `passwordRequired: true` になり、`version` / `pages` / `metadata` / `xmpPresent` が `null` になります（`structure` はバイトレベルの解析なので常に入ります）。`crypto` も同様です。
+</details>
+
+<details>
+<summary><code>pdfgate scan</code></summary>
+
+```json
+{
+  "findings": [
+    { "kind": "javascript", "objectNumber": 3, "detail": null },
+    { "kind": "uri-action", "objectNumber": 9, "detail": "https://example.com/exfil" }
+  ],
+  "counts": { "javascript": 1, "uri-action": 1 }
+}
+```
+
+`kind` の取りうる値: `javascript`, `launch-action`, `uri-action`, `remote-goto`, `submit-form`, `import-data`, `movie`, `sound`, `rendition`, `file-attachment-annotation`, `richmedia`, `3d-content`, `embedded-file`, `embedded-files-name-tree`, `xfa`。
+
+`detail` は種別ごとの補足で、`uri-action` なら遷移先 URL、`launch-action` / `remote-goto` / `submit-form` / `import-data` / `embedded-file` なら対象ファイル名が入ります。
+</details>
+
+<details>
+<summary><code>pdfgate validate</code></summary>
+
+```json
+{
+  "ok": false,
+  "issues": [
+    { "severity": "deny", "code": "javascript", "message": "1 occurrence(s)" },
+    { "severity": "warn", "code": "uri-action", "message": "1 occurrence(s); e.g. https://example.com/exfil" }
+  ]
+}
+```
+
+`issues` は deny が先、その中では `code` 順にソートされます。`ok` は deny が 1 件もないことと同値で、exit code 0/1 と対応します。ポリシーで `allow` にした種別は `issues` に現れません。
+
+`code` は上記の `scan` の `kind` 全種に加えて、`encrypted`, `password-protected`, `incremental-update`, `data-after-eof`, `max-pages-exceeded`, `max-objects-exceeded` を取ります。
+</details>
+
+<details>
+<summary>エラー (exit 2)</summary>
+
+```json
+{ "error": { "code": "parse-failure", "message": "IOException: Page tree root must be a dictionary" } }
+```
+
+`code` は `parse-failure`（破損・パース不能）か `password-required`（パスワードなしでは解析できない）のいずれかです。なお `info` と `crypto` はパスワード不明でもエラーにせず `passwordRequired: true` を返し、`validate` は `password-protected` の issue として報告します。
+</details>
+
 ## validate のポリシー
 
 デフォルトでは JavaScript・Launch/GoToR/SubmitForm/ImportData アクション・埋め込みファイル・RichMedia・パスワード保護を **deny**、URI アクション・XFA・添付アノテーション・暗号化・インクリメンタル更新・%%EOF 後のデータを **warn** とします。`--policy` の JSON で上書きできます:
@@ -59,6 +167,10 @@ scala-cli --power package --native-image . -o pdfgate
 
 # 4. ネイティブバイナリのスモークテスト
 scripts/smoke.sh ./pdfgate
+
+# 5. 出力が schemas/ の JSON Schema に適合することの検証（要 pip install jsonschema）
+scala-cli run . --main-class pdfgate.testkit.GenFixtures -- fixtures
+python3 scripts/schema_check.py ./pdfgate fixtures
 ```
 
 ### 完全静的リンク (musl) — scratch コンテナ向け

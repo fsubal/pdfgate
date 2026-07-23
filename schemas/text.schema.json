@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fsubal/pdfgate/main/schemas/text.schema.json",
+  "title": "pdfgate text result",
+  "description": "stdout of `pdfgate text <file> [--pages a-b] [--max-chars n]` on exit code 0.",
+  "type": "object",
+  "required": ["pages", "truncated", "text"],
+  "additionalProperties": false,
+  "properties": {
+    "pages": { "type": "integer", "description": "Number of pages text was extracted from" },
+    "truncated": { "type": "boolean", "description": "True when text was cut at --max-chars" },
+    "text": { "type": "string", "description": "Extracted text. Unicode-normalized by the extractor (e.g. the ﬁ ligature becomes \"fi\")." }
+  }
+}

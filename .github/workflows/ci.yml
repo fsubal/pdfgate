@@ -45,6 +45,13 @@ jobs:
           scala-cli run . --main-class pdfgate.testkit.GenFixtures -- fixtures
           python3 scripts/poppler_compare.py ./${{ matrix.artifact }} fixtures
 
+      - name: Check output against published schemas
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python3 -m pip install --quiet jsonschema
+          scala-cli run . --main-class pdfgate.testkit.GenFixtures -- fixtures
+          python3 scripts/schema_check.py ./${{ matrix.artifact }} fixtures
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

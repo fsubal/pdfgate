@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fsubal/pdfgate/main/schemas/crypto.schema.json",
+  "title": "pdfgate crypto result",
+  "description": "stdout of `pdfgate crypto <file>` on exit code 0. For an unencrypted document only encrypted/passwordRequired/signatures carry information; the rest is null. When password-protected and no valid --password was given, passwordRequired is true and details are null.",
+  "type": "object",
+  "required": ["encrypted", "passwordRequired", "filter", "subFilter", "version", "revision", "keyLengthBits", "permissions", "signatures"],
+  "additionalProperties": false,
+  "properties": {
+    "encrypted": { "type": "boolean" },
+    "passwordRequired": { "type": "boolean" },
+    "filter": { "type": ["string", "null"], "description": "Security handler, e.g. \"Standard\"" },
+    "subFilter": { "type": ["string", "null"] },
+    "version": { "type": ["integer", "null"], "description": "Encryption dictionary /V" },
+    "revision": { "type": ["integer", "null"], "description": "Encryption dictionary /R" },
+    "keyLengthBits": { "type": ["integer", "null"] },
+    "permissions": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["canPrint", "canModify", "canExtractContent", "canFillInForm", "canModifyAnnotations", "canAssembleDocument"],
+          "additionalProperties": false,
+          "properties": {
+            "canPrint": { "type": "boolean" },
+            "canModify": { "type": "boolean" },
+            "canExtractContent": { "type": "boolean" },
+            "canFillInForm": { "type": "boolean" },
+            "canModifyAnnotations": { "type": "boolean" },
+            "canAssembleDocument": { "type": "boolean" }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "signatures": {
+      "type": "array",
+      "description": "Digital signature dictionaries. Presence and structure only; cryptographic verification is out of scope.",
+      "items": {
+        "type": "object",
+        "required": ["name", "signDate", "filter", "subFilter", "coversWholeDocument"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": ["string", "null"] },
+          "signDate": { "type": ["string", "null"], "description": "ISO-8601 instant" },
+          "filter": { "type": ["string", "null"] },
+          "subFilter": { "type": ["string", "null"] },
+          "coversWholeDocument": { "type": "boolean", "description": "Whether /ByteRange spans the entire file (data appended after signing would make this false)" }
+        }
+      }
+    }
+  }
+}

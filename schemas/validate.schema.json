@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fsubal/pdfgate/main/schemas/validate.schema.json",
+  "title": "pdfgate validate result",
+  "description": "stdout of `pdfgate validate <file> [--policy <file>]`. Exit code 0 when ok is true, 1 when ok is false. Issues are sorted deny-first, then by code.",
+  "type": "object",
+  "required": ["ok", "issues"],
+  "additionalProperties": false,
+  "properties": {
+    "ok": { "type": "boolean", "description": "False when at least one issue has severity \"deny\"" },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "code", "message"],
+        "additionalProperties": false,
+        "properties": {
+          "severity": { "type": "string", "enum": ["deny", "warn"], "description": "\"allow\"-ruled findings are omitted entirely" },
+          "code": { "$ref": "#/$defs/issueCode" },
+          "message": { "type": "string", "description": "Human-readable; occurrence count and a sample detail where available. Not machine-stable — branch on code instead." }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "issueCode": {
+      "type": "string",
+      "description": "Every scan finding kind, plus structural / policy checks",
+      "enum": [
+        "javascript",
+        "launch-action",
+        "uri-action",
+        "remote-goto",
+        "submit-form",
+        "import-data",
+        "movie",
+        "sound",
+        "rendition",
+        "file-attachment-annotation",
+        "richmedia",
+        "3d-content",
+        "embedded-file",
+        "embedded-files-name-tree",
+        "xfa",
+        "encrypted",
+        "password-protected",
+        "incremental-update",
+        "data-after-eof",
+        "max-pages-exceeded",
+        "max-objects-exceeded"
+      ]
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fsubal/pdfgate/main/schemas/scan.schema.json",
+  "title": "pdfgate scan result",
+  "description": "stdout of `pdfgate scan <file>` on exit code 0. Risk-relevant elements found by walking the reachable COS object graph. An empty findings array means nothing risk-relevant was found.",
+  "type": "object",
+  "required": ["findings", "counts"],
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "objectNumber", "detail"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "$ref": "#/$defs/findingKind" },
+          "objectNumber": { "type": ["integer", "null"], "description": "PDF object number the element was found in; null for the trailer / direct objects" },
+          "detail": { "type": ["string", "null"], "description": "Kind-specific detail: target URI for uri-action, target file for launch-action / remote-goto / submit-form / import-data / embedded-file" }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "description": "findings aggregated per kind",
+      "propertyNames": { "$ref": "#/$defs/findingKind" },
+      "additionalProperties": { "type": "integer" }
+    }
+  },
+  "$defs": {
+    "findingKind": {
+      "type": "string",
+      "enum": [
+        "javascript",
+        "launch-action",
+        "uri-action",
+        "remote-goto",
+        "submit-form",
+        "import-data",
+        "movie",
+        "sound",
+        "rendition",
+        "file-attachment-annotation",
+        "richmedia",
+        "3d-content",
+        "embedded-file",
+        "embedded-files-name-tree",
+        "xfa"
+      ]
+    }
+  }
+}

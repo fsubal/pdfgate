@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fsubal/pdfgate/main/schemas/error.schema.json",
+  "title": "pdfgate error result",
+  "description": "stdout of any subcommand on exit code 2 (unreadable input). \"parse-failure\" = broken / unparseable file; \"password-required\" = encrypted file that the requested analysis cannot inspect without --password (info and crypto instead succeed with passwordRequired: true, and validate reports a password-protected issue). Exit code 3 (usage error, invalid --policy file) prints no JSON on stdout — diagnostics go to stderr.",
+  "type": "object",
+  "required": ["error"],
+  "additionalProperties": false,
+  "properties": {
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string", "enum": ["parse-failure", "password-required"] },
+        "message": { "type": "string", "description": "Human-readable; not machine-stable" }
+      }
+    }
+  }
+}
