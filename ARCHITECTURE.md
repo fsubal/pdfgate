@@ -93,6 +93,10 @@ scala-cli run . -- info fixtures/simple.pdf            # JVM 上で実際に動�
 scala-cli --power package --native-image . -o pdfgate  # ネイティブバイナリを作る（数分）
 ```
 
+`--power` は scala-cli の **power モード**を有効にするフラグです。
+
+scala-cli はデフォルトでは日常的なサブコマンド（`run` / `test` / `compile` など）だけを見せ、上級者向け・非標準の機能を隠しています。`--power` はその隠された機能を解禁するスイッチで、**本プロジェクトでは `package` サブコマンド**（native バイナリや assembly jar の生成）を使うために付けています。`test` や `run` に `--power` が要らないのは、それらが最初から表に出ているコマンドだからです。要するに「バイナリを固めるビルド工程だけ power モードが要る」と覚えれば十分で、機能面での深い含意はありません（`scala-cli config power true` で常時 ON にもできますが、このリポジトリは明示的にフラグを付ける方針です）。
+
 > **切り分けのヒント:** 開発は JVM 上の `scala-cli test` / `run` で回すのが基本です。native ビルドは遅く、かつ「native でだけ出る問題」（後述 §6）があるので、**JVM で再現するバグと native でだけ出るバグは別物**として扱ってください。前者は普通の Scala/PDFBox の問題、後者はほぼ native-image 設定の問題です。
 
 ---
