@@ -30,7 +30,7 @@ PDF を読むには、バイト列を解釈して中身（ページ・テキス�
 
 つまり pdfgate は、ざっくり言えば **「poppler ではなく PDFBox で PDF を読み、検査に必要な情報を JSON で出すツール」** です。README で「poppler の高機能な代替」と書いているのはこの意味で、`text` サブコマンドが「pdftotext 相当」と言っているのも、poppler の `pdftotext` と同じ用途だからです。
 
-なお poppler は本プロジェクトの依存**ではありません**。CI で `scripts/poppler_compare.py` が poppler を呼ぶのは、pdfgate の出力（ページ数やテキスト）が枯れた実装とズレていないかを**答え合わせ**するためだけで、pdfgate 本体は poppler なしで動きます。
+なお poppler は本プロジェクトの依存**ではありません**。CI で `tools/poppler-compare.scala` が poppler を呼ぶのは、pdfgate の出力（ページ数やテキスト）が枯れた実装とズレていないかを**答え合わせ**するためだけで、pdfgate 本体は poppler なしで動きます。
 
 ---
 
@@ -56,10 +56,12 @@ pdfgate/
     PdfgateSuite.scala     ← munit テスト
   tools/
     patch-pdfbox.scala     ← PDFBox jar から AWT 依存を除去する前処理（後述）
+    schema-check.scala     ← 実バイナリ出力を schemas/ で検証（CI）
+    poppler-compare.scala  ← 実バイナリ出力を poppler と突き合わせ（CI）
   resources/
     META-INF/native-image/ ← GraalVM 用メタデータ（reflect/resource 設定）
   schemas/                 ← 出力 JSON の JSON Schema（利用者向け契約）
-  scripts/                 ← CI 用の検証スクリプト（smoke / schema / poppler 比較）
+  scripts/                 ← CI 用の smoke テスト（smoke.sh）
   lib/
     pdfbox-3.0.7-noawt.jar ← patch-pdfbox.scala が生成する改変版 PDFBox（git 管理外）
 ```
@@ -146,7 +148,7 @@ private val infoCmd = Opts.subcommand("info", "...") {
 `Main` のもう 1 つの仕事は **exit code の確定**です:
 
 | exit | 意味                       | どこで決まるか                                       |
-| ---- | -------------------------- | ---------------------------------------------------- |
+| -----| -------------------------- | ---------------------------------------------------- |
 | 0    | 正常                       | `emit(r, 0)`                                         |
 | 1    | validate のポリシー違反    | `emit(r, if r.ok then 0 else 1)`                     |
 | 2    | パース不能・パスワード不明 | `parseError` / `passwordError`                       |
@@ -230,7 +232,7 @@ case class Layer(name: String, enabled: Boolean) derives ReadWriter
 
 `derives ReadWriter` が Scala エコシステム特有の勘所です。[upickle](https://github.com/com-lihaoyi/upickle)（このプロジェクトの JSON ライブラリ）に「この class ⇄ JSON の変換を生成させる」指定で、**コンパイル時にマクロで変換コードを生成します**。実行時リフレクションを使わないのがポイントで、これが native-image と相性が良い理由です（§6 で効いてきます）。Java 界で一般的な Jackson 等はリフレクション前提なので native-image で追加設定が要る——それを避けるための選択、という文脈で理解してください。
 
-**契約上の要点:** フィールドが `Option[T]` だと、値が無いとき JSON では `null` になります（キー自体は消えません）。README の「すべてのキーが常に存在し、無い値は `null`」はこれに由来します。case class のフィールド追加・リネームは**そのまま JSON の破壊的変更**なので、`schemas/` の更新と `scripts/schema_check.py` の通過をセットで考えてください。
+**契約上の要点:** フィールドが `Option[T]` だと、値が無いとき JSON では `null` になります（キー自体は消えません）。README の「すべてのキーが常に存在し、無い値は `null`」はこれに由来します。case class のフィールド追加・リネームは**そのまま JSON の破壊的変更**なので、`schemas/` の更新と `tools/schema-check.scala` の通過をセットで考えてください。
 
 ---
 
@@ -264,12 +266,12 @@ PDFBox の `PDDocument` は static initializer（クラスが最初に使われ�
 
 ## 7. テストと検証（4 段構え）
 
-| 手段                         | 何を保証するか                                                              | どこ                      |
-| ---------------------------- | --------------------------------------------------------------------------- | ------------------------- |
-| munit（JVM）                 | 解析ロジックの正しさ。速い。日常開発はこれ                                  | `test/PdfgateSuite.scala` |
-| `scripts/smoke.sh`           | **native バイナリ**が JVM と同じ JSON を出すこと（§6 の設定漏れ検出）       | CI                        |
-| `scripts/schema_check.py`    | 実バイナリ出力が `schemas/` の JSON Schema に適合すること（出力契約の維持） | CI                        |
-| `scripts/poppler_compare.py` | ページ数・テキストなどが poppler と概ね一致すること                         | CI                        |
+| 手段                          | 何を保証するか                                                              | どこ                      |
+| ----------------------------- | --------------------------------------------------------------------------- | ------------------------- |
+| munit（JVM）                  | 解析ロジックの正しさ。速い。日常開発はこれ                                  | `test/PdfgateSuite.scala` |
+| `scripts/smoke.sh`            | **native バイナリ**が JVM と同じ JSON を出すこと（§6 の設定漏れ検出）       | CI                        |
+| `tools/schema-check.scala`    | 実バイナリ出力が `schemas/` の JSON Schema に適合すること（出力契約の維持） | CI                        |
+| `tools/poppler-compare.scala` | ページ数・テキストなどが poppler と概ね一致すること                         | CI                        |
 
 テスト PDF は外部ファイルではなく **`testkit/Fixtures.scala` がコードで生成**します（レイヤー付き・JS 付き・暗号化・日本語など）。バイト操作で壊した PDF も作れるので、エラー正規化と exit 2 も再現できます。
 
@@ -289,7 +291,7 @@ PDFBox の `PDDocument` は static initializer（クラスが最初に使われ�
 
 ### 出力フィールドを足す/変える
 
-- `output/Model.scala` の case class を変更 → 対応する `schemas/*.schema.json` を更新 → `schema_check.py` が通ることを確認。**JSON の破壊的変更**に直結するので慎重に。
+- `output/Model.scala` の case class を変更 → 対応する `schemas/*.schema.json` を更新 → `tools/schema-check.scala` が通ることを確認。**JSON の破壊的変更**に直結するので慎重に。
 
 ### PDFBox を更新する
 
@@ -306,7 +308,7 @@ PDFBox の `PDDocument` は static initializer（クラスが最初に使われ�
 詰まったときの当たり付けに。
 
 | 症状・トピック                                   | どの領域の話か                                  | 参照        |
-| ------------------------------------------------ | ----------------------------------------------- | ----------- |
+| -------------------------------------------------| ----------------------------------------------- | ----------- |
 | `//> using` が効かない、依存が引けない           | Scala エコシステム（scala-cli / Maven Central） | §3          |
 | `PDDocument` の close 忘れ、`null` が飛んでくる  | Java 連携の作法                                 | §5.2 / §5.3 |
 | JSON のキーが増減した、`null` の扱い             | upickle（Scala ライブラリ）の作法               | §5.7        |

@@ -44,7 +44,7 @@ Apache PDFBox ベースの PDF 検査 CLI。GraalVM native-image で単一バイ
 | `text` | [`schemas/text.schema.json`](schemas/text.schema.json) |
 | すべて (exit 2) | [`schemas/error.schema.json`](schemas/error.schema.json) |
 
-スキーマが実際の出力と一致することは `scripts/schema_check.py` が CI で検証しています（実バイナリの出力を全コマンド分バリデートするので、実装がずれたら CI が落ちます）。
+スキーマが実際の出力と一致することは `tools/schema-check.scala` が CI で検証しています（実バイナリの出力を全コマンド分バリデートするので、実装がずれたら CI が落ちます）。
 
 ### 共通の約束
 
@@ -170,7 +170,7 @@ scripts/smoke.sh ./pdfgate
 
 # 5. 出力が schemas/ の JSON Schema に適合することの検証（要 pip install jsonschema）
 scala-cli run . --main-class pdfgate.testkit.GenFixtures -- fixtures
-python3 scripts/schema_check.py ./pdfgate fixtures
+scala-cli run tools/schema-check.scala -- ./pdfgate fixtures
 ```
 
 ### 完全静的リンク (musl) — scratch コンテナ向け

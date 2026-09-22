@@ -43,14 +43,13 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -qq -y poppler-utils
           scala-cli run . --main-class pdfgate.testkit.GenFixtures -- fixtures
-          python3 scripts/poppler_compare.py ./${{ matrix.artifact }} fixtures
+          scala-cli run tools/poppler-compare.scala -- ./${{ matrix.artifact }} fixtures
 
       - name: Check output against published schemas
         if: matrix.os == 'ubuntu-latest'
         run: |
-          python3 -m pip install --quiet jsonschema
           scala-cli run . --main-class pdfgate.testkit.GenFixtures -- fixtures
-          python3 scripts/schema_check.py ./${{ matrix.artifact }} fixtures
+          scala-cli run tools/schema-check.scala -- ./${{ matrix.artifact }} fixtures
 
       - uses: actions/upload-artifact@v4
         with:
