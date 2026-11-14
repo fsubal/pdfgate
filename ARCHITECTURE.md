@@ -1,132 +1,136 @@
 # ARCHITECTURE
 
-このドキュメントは pdfgate の設計とコードの歩き方をまとめたものです。想定読者は、**プログラミング自体は分かるが、Java/Scala のエコシステムや PDF のドメインには不案内な人**です。
+本書は、pdfgate の設計思想とコードベースの全体像をまとめたアーキテクチャドキュメントです。想定読者は、**一般的なプログラミングの経験はあるものの、Java / Scala のエコシステムや PDF の内部仕様には詳しくないエンジニア**です。
 
-pdfgate の難しさは大きく 2 系統に分かれます。**Scala 由来の難しさ**（言語機能ではなく、ビルドの流儀・ライブラリの作法・native-image という Java 界特有の事情）と、**PDF 由来の難しさ**（COS グラフ、フォント、暗号化など仕様そのものの複雑さ）です。この 2 つは絡み合って見えるので、各所で「これはどっちの話か」を明示します。詰まったときに切り分けの当たりがつくはずです。
+pdfgate を理解する難しさは、大きく 2 つに分類できます。1 つは **Scala / Java エコシステムに起因する難しさ**（言語構文というよりは、ビルドツールやライブラリの作法、GraalVM native-image 特有の事情）、もう 1 つは **PDF 仕様そのものに起因する難しさ**（COS グラフ、フォント、暗号化などの複雑さ）です。この 2 つは一見すると絡み合って見えやすいため、本書では「どちらに起因する話なのか」を意識して切り分けながら解説します。問題が起きたときの原因調査に役立ててください。
 
-利用者向けの使い方は [README.md](README.md)、出力 JSON の仕様は [`schemas/`](schemas/) を見てください。ここは中の人向けです。
+CLI の使い方については [README.md](README.md)、出力 JSON のスキーマ定義は [`schemas/`](schemas/) を参照してください。本書は内部実装や開発・保守に携わるコントリビューター向けの内容です。
 
 ---
 
 ## 1. 何をするものか、なぜこの構成なのか
 
-**信頼できない PDF を、レンダリングせずに解析して JSON で返す CLI** です。Web サービスにアップロードされた PDF の検査（危険要素の検出、暗号化・署名情報、テキスト抽出など）が主用途です。
+pdfgate は、**信頼できない（untrusted な）PDF を、レンダリングを行わずに解析して JSON を返す CLI ツール**です。Web サービスにアップロードされた PDF の検査（危険要素の検出、暗号化・署名情報の確認、テキスト抽出など）を主な用途としています。
 
-設計を決めている技術的制約は 2 つ:
+アーキテクチャを決定づけている技術的制約は、主に次の 2 点です。
 
-1. **Apache PDFBox（Java 製）を使う。** poppler では取りにくい情報（レイヤー = OCG、AcroForm/XFA、各種アクション、暗号化辞書）を取れるのが採用理由です。→ ここから「Scala から Java ライブラリを呼ぶ」構図と、Java 由来の作法（`null`、Java コレクション）が全体に染み出します。
-2. **GraalVM native-image で単一バイナリにコンパイルする。** 実行環境に JVM を要求しないため、`pdfgate` という 1 ファイルを置けば動きます。→ ここから「リフレクションを避ける」「AWT を到達不能にする」といった、後述の一連の制約が生まれます。
+1. **Java 製の Apache PDFBox を利用すること**  
+   poppler では取得しにくい詳細な構造情報（レイヤー［OCG］、AcroForm / XFA、各種アクション、暗号化辞書など）を網羅できる点が選定理由です。このため、コード全体に「Scala から Java ライブラリを呼び出す」構図が生じ、Java 特有の作法（`null` の扱いや Java 標準コレクションとの相互運用など）が各所に現れます。
+2. **GraalVM native-image によりスタンドアロンの単一バイナリへコンパイルすること**  
+   実行環境に JVM のセットアップを要求せず、`pdfgate` バイナリを 1 つ配置するだけで動作させるための要件です。これにより、「実行時リフレクションの回避」や「AWT への参照を完全に排除する」といった、後述する一連の制約が生まれます。
 
-この 2 つが本プロジェクト特有の面倒さの発生源です。純粋な Scala の話は実はそれほど多くありません。
+本プロジェクト特有の複雑さの大部分は、この 2 つの制約に起因しています。Scala 言語自体の難解さは、それほど本質的ではありません。
 
-### 1.1 前提知識：poppler と PDFBox とは何か
+### 1.1 前提知識：poppler と PDFBox の違い
 
-このドキュメントでは比較対象として **poppler** を繰り返し引き合いに出すので、先に整理します。PDF に不案内でも困らないよう、最低限の位置づけだけ押さえてください。
+本書では比較対象として **poppler** を頻繁に引き合いに出すため、あらかじめ両者の違いを整理しておきます。PDF のドメインに詳しくない方でも理解できるよう、最低限の位置づけをまとめました。
 
-PDF を読むには、バイト列を解釈して中身（ページ・テキスト・フォント・メタデータ・埋め込みオブジェクトなど）を取り出すライブラリが要ります。代表的なものが 2 つあります:
+PDF ファイルを処理するには、生バイト列を解釈して内部データ（ページ、テキスト、フォント、メタデータ、埋め込みオブジェクトなど）を取り出すライブラリが必要です。代表的なものとして以下の 2 つが挙げられます。
 
-- **poppler** … C++ 製の定番 PDF ライブラリ。Linux に広く入っており、付属のコマンド `pdftotext`（テキスト抽出）・`pdfinfo`（ページ数やメタデータの表示）・`pdftoppm`（画像化）などで有名です。**レンダリングとテキスト抽出に強い**一方、レイヤーやフォーム、危険要素といった「構造の細部」を機械可読に取り出す用途には向きません。多くの環境で `pdftotext upload.pdf` のように既に使われています。
-- **Apache PDFBox** … Java 製の PDF ライブラリ。poppler より**構造情報へのアクセスが豊富**で、レイヤー (OCG)、AcroForm/XFA フォーム、各種アクション、暗号化辞書、電子署名などをオブジェクト単位で読めます。pdfgate が検査ツールとしてこれを選んだ理由がここにあります。
+- **poppler**: C++ 製のデファクトスタンダードな PDF ライブラリです。多くの Linux ディストリビューションに標準で導入されており、付属 CLI コマンドの `pdftotext`（テキスト抽出）、`pdfinfo`（メタデータ表示）、`pdftoppm`（ラスタライズ・画像化）などが広く使われています。**レンダリングやテキスト抽出に優れている**一方、レイヤーやフォーム、潜在的な危険要素といった「内部構造の細部」を機械可読な形で網羅的に取り出す用途には適していません。
+- **Apache PDFBox**: Java 製の PDF ライブラリです。poppler と比べて**内部構造に関する API が充実**しており、レイヤー (OCG)、AcroForm / XFA フォーム、各種アクション、暗号化辞書、電子署名などをオブジェクト単位で細かく解析できます。pdfgate が検査ツールとして PDFBox を採用した理由はここにあります。
 
-つまり pdfgate は、ざっくり言えば **「poppler ではなく PDFBox で PDF を読み、検査に必要な情報を JSON で出すツール」** です。README で「poppler の高機能な代替」と書いているのはこの意味で、`text` サブコマンドが「pdftotext 相当」と言っているのも、poppler の `pdftotext` と同じ用途だからです。
+要約すると、pdfgate は **「poppler ではなく PDFBox を内部エンジンに用いることで、セキュリティ検証に必要な構造情報を JSON として抽出するツール」** です。README で「poppler の高機能な代替」と謳っているのはこの背景によるもので、`text` サブコマンドが「pdftotext 相当」としているのも、既存の `pdftotext` と同様の用途で置き換えて使えることを意味しています。
 
-なお poppler は本プロジェクトの依存**ではありません**。CI で `tools/poppler-compare.scala` が poppler を呼ぶのは、pdfgate の出力（ページ数やテキスト）が枯れた実装とズレていないかを**答え合わせ**するためだけで、pdfgate 本体は poppler なしで動きます。
+なお、poppler は本プロジェクトの依存ライブラリ**ではありません**。CI で `tools/poppler-compare.scala` が poppler を実行しているのは、pdfgate の出力結果（ページ数や抽出テキスト）が実績ある既存実装と乖離していないかを検証（答え合わせ）するためであり、pdfgate 自体は poppler なしで完結して動作します。
 
 ---
 
-## 2. リポジトリの地図
+## 2. ディレクトリ構成とコードの歩き方
 
 ```
 pdfgate/
-  project.scala            ← ビルド定義（依存・コンパイラ設定・native-image 設定）
+  project.scala            ← ビルド定義（依存ライブラリ、コンパイラ設定、native-image 設定）
   src/
-    Main.scala             ← CLI エントリポイント。引数を解釈しサブコマンドに振り分ける
-    analysis/              ← PDF を解析するロジック（PDFBox を触るのはここだけ）
-      Doc.scala            ←   PDF を開く/閉じる/例外を正規化する“関所”
-      Analyze.scala        ←   info / layers / forms / crypto の中身
-      Scan.scala           ←   scan：危険要素の列挙（COS グラフを歩く）
-      Validate.scala       ←   validate：ポリシー判定 + Policy 定義
-      Structure.scala      ←   バイトレベルの構造チェック（パース不能でも動く）
-      Text.scala           ←   text：テキスト抽出
+    Main.scala             ← CLI エントリポイント。引数をパースしサブコマンドへ振り分ける
+    analysis/              ← PDF 解析ロジック（PDFBox に直接触れるのはこのディレクトリのみ）
+      Doc.scala            ←   PDF のオープン/クローズ、例外の正規化を担う関所
+      Analyze.scala        ←   info / layers / forms / crypto コマンドの実装
+      Scan.scala           ←   scan: 危険要素の検出（COS グラフの走査）
+      Validate.scala       ←   validate: ポリシー判定と Policy 定義
+      Structure.scala      ←   生バイト列の構造チェック（パース不能な破損ファイルでも動作）
+      Text.scala           ←   text: テキスト抽出
     output/
-      Model.scala          ← 出力 JSON の“形”を定義した case class 群
+      Model.scala          ← 出力 JSON のデータ構造を定義した case class 群
     testkit/
-      Fixtures.scala       ← テスト用 PDF をコードで生成する
+      Fixtures.scala       ← テスト用 PDF をコードから動的に生成するヘルパー
   test/
-    PdfgateSuite.scala     ← munit テスト
+    PdfgateSuite.scala     ← munit による単体テスト
   tools/
-    patch-pdfbox.scala     ← PDFBox jar から AWT 依存を除去する前処理（後述）
-    schema-check.scala     ← 実バイナリ出力を schemas/ で検証（CI）
-    poppler-compare.scala  ← 実バイナリ出力を poppler と突き合わせ（CI）
+    patch-pdfbox.scala     ← PDFBox JAR から AWT 依存を除去する前処理スクリプト（後述）
+    schema-check.scala     ← 実バイナリ出力を schemas/ で検証する CI スクリプト
+    poppler-compare.scala  ← 実バイナリ出力を poppler と突き合わせて比較する CI スクリプト
   resources/
-    META-INF/native-image/ ← GraalVM 用メタデータ（reflect/resource 設定）
-  schemas/                 ← 出力 JSON の JSON Schema（利用者向け契約）
-  scripts/                 ← CI 用の smoke テスト（smoke.sh）
+    META-INF/native-image/ ← GraalVM 向けメタデータ（リフレクションやリソースの設定）
+  schemas/                 ← 出力 JSON の JSON Schema（外部向けの出力契約）
+  scripts/                 ← CI 用スモークテストスクリプト（smoke.sh）
   lib/
-    pdfbox-3.0.7-noawt.jar ← patch-pdfbox.scala が生成する改変版 PDFBox（git 管理外）
+    pdfbox-3.0.7-noawt.jar ← patch-pdfbox.scala が生成する改変版 PDFBox JAR（git 管理対象外）
 ```
 
-読む順番は `Main.scala` → `output/Model.scala` → `analysis/` です。入口・データの形・解析ロジックの 3 階層を押さえれば全体が見えます。
+コードを読み解く際は、**`Main.scala`（CLI の入口）→ `output/Model.scala`（出力データ構造）→ `analysis/`（解析ロジック）** の順に追うのがおすすめです。「入口」「データの形」「ドメインロジック」という 3 つの階層を押さえることで、全体のアーキテクチャが自然に見通せます。
 
 ---
 
-## 3. ビルドの流儀（Java/Scala に不案内な人向け）
+## 3. ビルドの流儀（Java / Scala に不案内な人向け）
 
-Java/Scala と聞いて Maven や Gradle、sbt を思い浮かべたなら、いったん忘れてください。**このプロジェクトは [scala-cli](https://scala-cli.virtuslab.org/) を使っています。** `build.sbt` も `pom.xml` もありません。ビルド定義は `project.scala` の冒頭にあるコメント風の行に全部書かれています。
+Java や Scala と聞くと Maven、Gradle、sbt といったビルドツールを思い浮かべるかもしれませんが、**本プロジェクトでは [scala-cli](https://scala-cli.virtuslab.org/) を採用しています**。そのため `build.sbt` や `pom.xml` は存在せず、ビルド定義はすべて `project.scala` の冒頭にあるディレクティブに集約されています。
 
 ```scala
 //> using scala 3.3                              // Scala のバージョン
 //> using dep com.lihaoyi::upickle:4.4.3         // 依存ライブラリ
-//> using packaging.graalvmArgs --no-fallback    // native-image のフラグ
+//> using packaging.graalvmArgs --no-fallback    // native-image 向けのフラグ
 ```
 
-`//> using` は**コメントではなく、scala-cli が読むビルド設定**です。ここが最初の引っかかりどころ。依存の書き方には Java/Scala エコシステム共通の作法が出ます:
+`//> using` は単なるコメントではなく、**scala-cli が解釈するビルド設定（ディレクティブ）**です。初めて触れる際に引っかかりやすいポイントです。また、依存ライブラリの指定方法には、Java / Scala エコシステム特有のルールがあります。
 
-- `dep org.group:artifact:version`（`:` 1 個）… **Java ライブラリ**。座標は `groupId:artifactId:version`。PDFBox など Java 製はこれ。
-- `dep org.group::artifact:version`（`::` 2 個）… **Scala ライブラリ**。`::` は「この Scala バージョン用にビルドされた版を選べ」という意味で、実際には `artifact_3` のようにサフィックスが補われます。Scala ライブラリはコンパイラのメジャー版ごとに別 jar になるため、この区別が要ります。
+- `dep org.group:artifact:version`（コロンが 1 つ）: **Java ライブラリ**を指定します。形式は `groupId:artifactId:version` です。PDFBox など Java 製のライブラリはこちらで記述します。
+- `dep org.group::artifact:version`（コロンが 2 つ）: **Scala ライブラリ**を指定します。ダブルコロンは「現在の Scala バージョンに対応した成果物を選択する」という意味であり、内部的には `artifact_3` のようにバイナリバージョンのサフィックスが自動で補完されます。Scala ではコンパイラのメジャーバージョンごとにバイナリ互換性が分かれるため、この区別が必要です。
 
-依存は Maven Central から取得されます（Java 界の中央リポジトリ。Scala ライブラリもここに publish されます）。
+指定した依存ライブラリは、すべて Maven Central（Java / Scala 界隈の標準パッケージリポジトリ）から自動的にダウンロードされます。
 
-日常コマンド:
+日常的によく使うコマンド:
 
 ```sh
-scala-cli test .                                       # テスト（JVM 上、速い）
-scala-cli run . -- info fixtures/simple.pdf            # JVM 上で実際に動かす
-scala-cli --power package --native-image . -o pdfgate  # ネイティブバイナリを作る（数分）
+scala-cli test .                                       # ユニットテストの実行（JVM 上で高速に動作）
+scala-cli run . -- info fixtures/simple.pdf            # JVM 上での直接実行
+scala-cli --power package --native-image . -o pdfgate  # ネイティブバイナリのビルド（数分程度）
 ```
 
-`--power` は scala-cli の **power モード**を有効にするフラグです。
+`--power` は、scala-cli の **power モード**（拡張機能）を有効にするフラグです。
 
-scala-cli はデフォルトでは日常的なサブコマンド（`run` / `test` / `compile` など）だけを見せ、上級者向け・非標準の機能を隠しています。`--power` はその隠された機能を解禁するスイッチで、**本プロジェクトでは `package` サブコマンド**（native バイナリや assembly jar の生成）を使うために付けています。`test` や `run` に `--power` が要らないのは、それらが最初から表に出ているコマンドだからです。要するに「バイナリを固めるビルド工程だけ power モードが要る」と覚えれば十分で、機能面での深い含意はありません（`scala-cli config power true` で常時 ON にもできますが、このリポジトリは明示的にフラグを付ける方針です）。
+scala-cli は、デフォルトでは日常的によく使うサブコマンド（`run`, `test`, `compile` など）のみを提供し、高度な機能や実験的な機能を隠しています。`--power` はそれらを一時的に解禁するスイッチであり、**本プロジェクトでは `package` サブコマンド（ネイティブバイナリや assembly JAR の生成）を利用するために指定しています**。日常の `test` や `run` では不要です。要するに「バイナリをパッケージングする工程でのみ `--power` が必要になる」と把握しておけば十分です（`scala-cli config power true` で常時有効化も可能ですが、本リポジトリでは環境差異を防ぐためコマンドライン引数で明示する運用にしています）。
 
-> **切り分けのヒント:** 開発は JVM 上の `scala-cli test` / `run` で回すのが基本です。native ビルドは遅く、かつ「native でだけ出る問題」（後述 §6）があるので、**JVM で再現するバグと native でだけ出るバグは別物**として扱ってください。前者は普通の Scala/PDFBox の問題、後者はほぼ native-image 設定の問題です。
+> **切り分けのヒント:** 日常の開発サイクルは、高速に実行できる JVM 上（`scala-cli test` や `run`）で回すのが基本です。native-image によるバイナリ生成には数分単位の時間がかかる上、「native 環境特有の不具合」（後述の §6）も存在します。そのため、**JVM 上で再現する問題と、native バイナリでのみ発生する問題は明確に切り分けて調査する**必要があります。前者は Scala や PDFBox のロジックの不具合であり、後者はほぼ間違いなく native-image 向けの設定漏れです。
 
 ---
 
-## 4. データの流れ（1 リクエストの一生）
+## 4. データの流れ（1 リクエストのライフサイクル）
 
-`pdfgate scan upload.pdf` を上から下へ辿ります。
+`pdfgate scan upload.pdf` を実行した際の処理の流れを上から順に辿ります。
 
 ```
-引数 "scan upload.pdf"
+CLI 引数 "scan upload.pdf"
       │
       ▼
-Main.scala  ── decline がサブコマンドを解釈し、file と password を取り出す
+Main.scala  ── decline がサブコマンドをパースし、file と password を抽出
       │
       ▼
 Doc.withDocument(file, pw) { doc => Scan.run(doc) }
-      │        ↑ ここで PDF を開き、必ず閉じ、例外を LoadResult に正規化する
+      │        ↑ PDF をオープンし、処理後に確実にクローズ。例外を LoadResult へ正規化
       ▼
-Scan.run(doc): ScanResult          ── PDFBox で解析し、結果を case class に詰める
+Scan.run(doc): ScanResult          ── PDFBox で解析を行い、結果を case class に格納
       │
       ▼
-emit(result, exitCode)             ── upickle が case class → JSON に変換して println
+emit(result, exitCode)             ── upickle が case class を JSON にシリアライズして標準出力へ送出
       │
       ▼
-stdout に JSON / プロセスは exitCode で終了
+標準出力に JSON が出力され、プロセスが exitCode で終了
 ```
 
-設計の核は **「PDFBox に触るのは `analysis/` の中だけ」「対外的な出力の形は `output/Model.scala` の case class だけ」** という 2 つの分離です。`Main.scala` は PDFBox の型をほぼ知らず、`PDDocument` を右から左へ渡すだけです。おかげで「PDF ドメインの複雑さ」は `analysis/` に隔離され、他の層は PDF を知らなくても読めます。
+設計の核となるのは、**「PDFBox に依存するコードを `analysis/` 内だけに閉じること」**、そして**「外部に公開する出力データ構造を `output/Model.scala` の case class に限定すること」**という 2 点の関心の分離です。
+
+`Main.scala` は PDFBox の具体的な型をほとんど意識せず、開いた `PDDocument` を解析層へそのまま渡すだけの役割にとどまります。これにより、PDF ドメイン特有の複雑さを `analysis/` の中に完全に隔離でき、他のレイヤーは PDF の仕様に煩わされることなく見通しよく実装できます。
 
 ---
 
@@ -134,7 +138,7 @@ stdout に JSON / プロセスは exitCode で終了
 
 ### 5.1 `Main.scala` — CLI の入口
 
-CLI パーサに [decline](https://ben.kirw.in/decline/) を使っています（Scala エコシステムで定番の CLI ライブラリ）。
+コマンドライン引数のパースには [decline](https://ben.kirw.in/decline/) を採用しています（Scala エコシステムで定評のある CLI パーサーライブラリです）。
 
 ```scala
 private val fileArg = Opts.argument[String]("file").map(File(_))
@@ -143,20 +147,20 @@ private val infoCmd = Opts.subcommand("info", "...") {
 }
 ```
 
-`(fileArg, passwordOpt).mapN { (file, pw) => ... }` は「引数とオプションが両方揃ったらその値で本体を組み立てる」という decline の定型です。`<+>`（`infoCmd <+> layersCmd <+> ...`）はサブコマンドを「どれか 1 つ」に合成する演算子。この 2 つは decline の書き方として覚えれば十分で、深掘り不要です。
+`(fileArg, passwordOpt).mapN { (file, pw) => ... }` は、「必須引数とオプションが両方揃った段階で処理を組み立てる」という decline の標準的なイディオムです。また、`<+>`（`infoCmd <+> layersCmd <+> ...`）は複数のサブコマンドを「いずれか 1 つを選択する」形に束ねる演算子です。これらは decline の構文ルールとして押さえておけば十分であり、深く掘り下げる必要はありません。
 
-`Main` のもう 1 つの仕事は **exit code の確定**です:
+`Main` のもう 1 つの重要な役割は **exit code の確定**です。
 
-| exit | 意味                       | どこで決まるか                                       |
-| -----| -------------------------- | ---------------------------------------------------- |
-| 0    | 正常                       | `emit(r, 0)`                                         |
-| 1    | validate のポリシー違反    | `emit(r, if r.ok then 0 else 1)`                     |
-| 2    | パース不能・パスワード不明 | `parseError` / `passwordError`                       |
-| 3    | 使用法エラー               | decline のパース失敗、または `--policy` 読み込み失敗 |
+| exit code | 意味 | 決定される箇所 |
+|---|---|---|
+| 0 | 正常終了 | `emit(r, 0)` |
+| 1 | validate によるポリシー違反 | `emit(r, if r.ok then 0 else 1)` |
+| 2 | パース不能・パスワード未指定 | `parseError` / `passwordError` |
+| 3 | CLI の使用法エラー | decline のパース失敗、または `--policy` の読み込み失敗 |
 
 ### 5.2 `analysis/Doc.scala` — 例外を正規化する関所（最重要）
 
-信頼できない PDF を扱うので、パーサはいつでも例外を投げます。それを 1 箇所に閉じ込めるのが `Doc` で、pdfgate で最も重要な設計上の一点です。
+信頼できない外部の PDF を処理する以上、パーサーはいつでも例外を発生させる可能性があります。それらの例外を一箇所で安全に捕捉・正規化するのが `Doc` であり、pdfgate の堅牢性を担保する上で最も重要なコンポーネントです。
 
 ```scala
 enum LoadResult:
@@ -165,157 +169,167 @@ enum LoadResult:
   case ParseFailed(message: String)
 ```
 
-`withDocument(file, pw)(f)` が **開く → `f` を実行 → 必ず `close()` → 途中の例外を `ParseFailed` に変換**、をまとめています。ここで Java 由来の事情が 2 つ出ます:
+`withDocument(file, pw)(f)` は、**「ファイルを開く → 処理 `f` を実行 → 確実に `close()` を呼ぶ → 発生した例外を `ParseFailed` に変換する」** という一連のライフサイクルを集約しています。ここでは Java ライブラリとの連携に起因する作法が 2 つ現れます。
 
-- **リソースの明示的クローズ。** Java の `PDDocument` はネイティブ資源を握るので `finally doc.close()` が要ります（Java の try-with-resources に相当する処理を手で書いている）。
-- **チェック例外と実行時例外の両方を捕まえる。** PDFBox は `IOException`（Java のチェック例外）も `RuntimeException` も投げるので両方 `catch` します。捕まえ損ねるとスタックトレースが stdout に漏れ、JSON 出力を汚します。
+- **明示的なリソース解放:** Java の `PDDocument` は OS レベルのリソース（ファイルハンドルやネイティブメモリ）を保持するため、確実に `finally doc.close()` を呼ぶ必要があります（Java の try-with-resources と同等の仕組みを明示的に実装しています）。
+- **checked 例外と unchecked 例外の双方の捕捉:** PDFBox は `IOException`（Java の checked 例外）だけでなく `RuntimeException`（unchecked 例外）も送出するため、両方を漏れなく `catch` します。捕捉に失敗するとスタックトレースが標準出力へ漏れ出し、出力 JSON を破損させてしまうためです。
 
-Either型（`Left(...)` / `Right(...)`）で成否を返しているのは Scala の作法ですが、狙いは「失敗を呼び出し側に `match` で強制的に処理させ、握りつぶしを防ぐ」ことです。ここは Scala 機能の説明というより、**untrusted input を扱う設計判断**として読んでください。
+成否を Either 型（`Left(...)` / `Right(...)`）で表現しているのは Scala の標準的なプラクティスですが、その目的は「呼び出し側に対してパターンマッチによる網羅的なエラーハンドリングを強制し、エラーの握りつぶしを防ぐこと」にあります。単なる文法上の好みの問題ではなく、**信頼できない入力を安全に処理するための防御的設計**として理解してください。
 
 ### 5.3 `analysis/Analyze.scala` — info / layers / forms / crypto
 
-PDFBox の高レベル API を叩いて結果を case class に詰め替える、素直な層です。**PDF ドメインの語彙**がここで初登場します:
+PDFBox の高レベル API を呼び出し、取得した結果を case class へ詰め替える薄いレイヤーです。ここでは以下のような **PDF 仕様特有の概念や用語** が登場します。
 
-- `getDocumentInformation` … 旧来の Info 辞書（Title/Author など）。XMP メタデータとは別物で、`xmpPresent` は後者の有無。
-- `getOCProperties` / OptionalContentGroups … **レイヤー**。PDF の「レイヤー」は Optional Content Group (OCG) という仕様上の呼び名で、表示 ON/OFF を持ちます。
-- `getAcroForm` / XFA … **フォーム**。PDF のフォームには古い AcroForm と、XML ベースの XFA の 2 系統があり、`NeedsRendering` が立っていれば動的 XFA。ここは PDF 仕様の歴史的経緯で、Scala とは無関係の複雑さです。
-- `getEncryption` / `getCurrentAccessPermission` / 署名辞書 … 暗号化方式・権限フラグ・電子署名。署名の**検証はしません**（存在と構造のみ）。
+- `getDocumentInformation`: 旧来の Info 辞書（Title や Author など）を取得します。これは XMP メタデータとは別物であり、`xmpPresent` は後者がドキュメント内に存在するかどうかを示します。
+- `getOCProperties` / `OptionalContentGroups`: **レイヤー情報**です。PDF 仕様においてレイヤーは Optional Content Group (OCG) と呼ばれ、表示状態（ON / OFF）を管理します。
+- `getAcroForm` / `XFA`: **フォーム機能**です。PDF のフォームには古典的な AcroForm と、XML ベースの XFA の 2 系統が存在します。`NeedsRendering` フラグが立っている場合は動的 XFA を意味します。これらは PDF 仕様の歴史的経緯によるものであり、Scala とは無関係なドメイン固有の複雑さです。
+- `getEncryption` / `getCurrentAccessPermission` / 署名辞書: 暗号化方式、アクセスパーミッション、電子署名情報を扱います。なお、署名内容自体の**検証は行わず**、存在の有無と構造の抽出のみにとどめています。
 
-Java 連携で繰り返し出るパターンだけ挙げておきます。これは PDFBox が Java だから避けられないもので、Scala の思想ではなく**橋渡しの定型**です:
+Java ライブラリとの相互運用において頻出するパターンを挙げておきます。これらは Scala 特有の思想というよりも、Java との**境界を取り持つための定型処理**です。
 
-- `Option(x)` … Java メソッドは `null` を返しうるので、境界で `Option` に包んで以降 `null` を考えない。
-- `.asScala` … Java コレクションを Scala コレクションに変換（`import scala.jdk.CollectionConverters.*`）。PDFBox の戻り値は Java コレクションなので頻出。
+- `Option(x)`: Java のメソッドは戻り値として `null` を返す可能性があるため、境界部分ですぐに `Option` へラップし、以降のコードで `null` を意識しなくて済むようにします。
+- `.asScala`: Java のコレクションを Scala のコレクション型へ変換します（`import scala.jdk.CollectionConverters.*`）。PDFBox の API は Java コレクションを返すため、頻繁に利用されます。
 
-### 5.4 `analysis/Scan.scala` — COS グラフを歩く（PDF ドメインの核心）
+### 5.4 `analysis/Scan.scala` — COS グラフの走査（PDF ドメインの核心）
 
-`scan` だけ他と作りが違います。**ここは Scala が難しいのではなく、PDF が難しい**箇所なので、少し丁寧に説明します。
+`scan` コマンドの実装は、他のコマンドとはアプローチが大きく異なります。**Scala の構文ではなく PDF の内部構造そのものの難しさに起因する**部分であるため、背景から丁寧に解説します。
 
-PDF ファイルの中身は、辞書（キー→値）・配列・数値・文字列・参照からなる**オブジェクトのグラフ**です。PDFBox ではこれを **COS**（Carousel Object System、PDF の内部データモデルの呼称）レベルの型 `COSDictionary` / `COSArray` / `COSObject` … として触れます。「高レベル API」（`PDDocument` 等）は、この生グラフの上に貼られた便利な皮です。
+PDF ファイルの実態は、辞書（キーと値のペア）、配列、数値、文字列、そして他オブジェクトへの参照から構成される**オブジェクトの有向グラフ**です。PDFBox においては、この内部構造が **COS**（Carousel Object System: PDF の内部データモデルの名称）レイヤーの型（`COSDictionary`, `COSArray`, `COSObject` など）として表現されています。普段よく目にする高レベル API（`PDDocument` など）は、この生グラフの上に被せられた扱いやすいラッパーに過ぎません。
 
-`scan` は高レベル APIを使わず、**グラフの入口から到達可能な全 COS オブジェクトを再帰的にたどります**:
+`scan` では高レベル API を経由せず、**グラフのルートから到達可能なすべての COS オブジェクトを再帰的にトラバース（走査）します**。
 
 ```scala
 def walk(base: COSBase, objNum: Option[Long]): Unit = base match
-  case obj: COSObject      => ... // 参照は 1 度だけ辿る（visited で循環対策）
+  case obj: COSObject      => ... // 参照は 1 度だけ辿る（visited で循環参照対策）
   case dict: COSDictionary => inspect(dict, objNum); 子を walk
   case arr: COSArray       => 各要素を walk
   case _ => ()
 ```
 
-なぜ全走査なのか。**危険要素は仕様上あちこちに置ける**からです。JavaScript は OpenAction にも、追加アクション (AA) にも、name tree にも、フォームフィールドのアクションにも書けます。高レベル API で「フォームの JS」「ドキュメントの JS」と個別に取りに行くと必ず漏れます。グラフを一度舐めれば取りこぼしません。PDF が悪意ある入力を隠せる場所を持つ、というドメイン知識がこの設計の理由です。
+なぜオブジェクトグラフ全体を走査する必要があるのでしょうか。それは、**PDF 仕様上、危険な要素を埋め込める場所が極めて多岐にわたるため**です。
 
-`visited`（訪問済みオブジェクトの集合）は、PDF が循環参照を持ちうるための無限ループ対策です。これも PDF 側の事情。
+例えば JavaScript は、ドキュメントオープン時のアクション（OpenAction）だけでなく、ページめくり時の追加アクション（AA）、name tree、各種フォームフィールドのアクションなど、ドキュメント内の無数の場所に潜伏させることができます。高レベル API を使って「ドキュメント直下の JS」「フォームの JS」と個別に取得しようとすると、往々にして見落としが発生します。しかし、オブジェクトグラフ全体を網羅的に走査すれば、配置場所に関わらず確実に検出できます。「PDF は悪意あるコードを隠蔽できる箇所があまりに多い」というドメイン知識に基づいた設計です。
 
-`inspect` が各辞書を見て危険要素を判定し `Finding` を積みます。`kind` 文字列（`javascript`, `uri-action`, …）は README と `schemas/scan.schema.json` の enum に対応する**対外契約**なので、うかつに変えないでください。
+なお、実装内の `visited`（走査済みオブジェクトのセット）は、PDF 内部の循環参照によって走査が無限ループに陥るのを防ぐためのガードです。これも PDF 仕様特有の性質に由来します。
+
+各辞書ノードを検査して危険要素を判定するのが `inspect` メソッドであり、検出時に `Finding` オブジェクトをリストに追加します。ここで出力される `kind` 文字列（`javascript`, `uri-action` など）は、README や `schemas/scan.schema.json` の enum 定義と紐づく**対外的なインターフェース契約**です。安易に変更しないよう注意してください。
 
 ### 5.5 `analysis/Validate.scala` — ポリシー判定
 
-`Policy` は「上限値（ページ数・オブジェクト数・インクリメンタル更新回数）」と「`kind → deny/warn/allow` のルール表」を持つ case class です。`Validate.run` は:
+`Policy` は、「各種リソースの上限値（ページ数、オブジェクト数、インクリメンタル更新回数）」および「各検出項目に対する判定ポリシー（`kind → deny/warn/allow` のマッピング表）」を保持する case class です。
 
-1. `Structure`（バイトレベル解析、§5.6）を見て incremental-update / data-after-eof を issue に。
-2. PDF が開けたら、上限超過・暗号化・`Scan.run` の結果を issue に。
-3. `deny` が 1 件でもあれば `ok = false`（= exit 1）。
+`Validate.run` の判定フローは以下のとおりです。
 
-`--policy foo.json` による部分上書きは、upickle が JSON を `Policy` に読み込むことで実現しています。
+1. `Structure` によるバイトレベル解析（§5.6 参照）を行い、`incremental-update` や `data-after-eof` などの構造異常を issue として登録する。
+2. PDF をパースできた場合は、上限超過、暗号化状態、および `Scan.run` で検出された危険要素を issue に追加する。
+3. 蓄積された issue の中に 1 件でも `deny` が存在すれば `ok = false`（exit code 1）と判定する。
 
-### 5.6 `analysis/Structure.scala` — パースできなくても動く検査
+`--policy <file>` によるポリシーのカスタマイズは、upickle を用いて JSON ファイルから `Policy` クラスへデシリアライズすることで実現しています。
 
-ここだけ PDFBox を使わず、**生バイトを自前で走査**します。`%PDF-` ヘッダ位置、`%%EOF` の個数（= インクリメンタル更新回数の目安）、EOF 後の余分なデータなどを、PDFBox で開けないほど壊れたファイルからも取れます。「パースできないPDFからも取れる情報を取る」ための工夫です。
+### 5.6 `analysis/Structure.scala` — パース不能なファイルでも動作する構造解析
 
-### 5.7 `output/Model.scala` — 出力の形と upickle の作法
+このモジュールに限り、PDFBox のパーサーに頼らず**ファイルの生バイト列を直接スキャン**しています。
 
-出力 JSON に対応する `case class` が集約されています。
+`%PDF-` ヘッダーの出現位置、`%%EOF` マーカーの個数（インクリメンタル更新回数の指標）、末尾の EOF 以降に付加された余剰データなどを、PDFBox がパースに失敗するような破損ファイルからでも抽出できます。「パーサーがクラッシュするような異常なファイルであっても、取得可能なメタ情報は漏らさず吸い出す」ための工夫です。
+
+### 5.7 `output/Model.scala` — 出力データ構造と upickle の作法
+
+出力 JSON のスキーマに対応する `case class` 群が集約されています。
 
 ```scala
 case class Layer(name: String, enabled: Boolean) derives ReadWriter
 ```
 
-`derives ReadWriter` が Scala エコシステム特有の勘所です。[upickle](https://github.com/com-lihaoyi/upickle)（このプロジェクトの JSON ライブラリ）に「この class ⇄ JSON の変換を生成させる」指定で、**コンパイル時にマクロで変換コードを生成します**。実行時リフレクションを使わないのがポイントで、これが native-image と相性が良い理由です（§6 で効いてきます）。Java 界で一般的な Jackson 等はリフレクション前提なので native-image で追加設定が要る——それを避けるための選択、という文脈で理解してください。
+`derives ReadWriter` は Scala 3 特有の重要な構文です。本プロジェクトで採用している JSON ライブラリ [upickle](https://github.com/com-lihaoyi/upickle) に対し、クラスと JSON の相互変換コードを**コンパイル時マクロによって自動生成させる**宣言です。
 
-**契約上の要点:** フィールドが `Option[T]` だと、値が無いとき JSON では `null` になります（キー自体は消えません）。README の「すべてのキーが常に存在し、無い値は `null`」はこれに由来します。case class のフィールド追加・リネームは**そのまま JSON の破壊的変更**なので、`schemas/` の更新と `tools/schema-check.scala` の通過をセットで考えてください。
+最大の利点は**実行時リフレクションを一切使わない**点にあり、これが GraalVM native-image との抜群の親和性につながっています（詳細は §6 参照）。Java エコシステムで主流の Jackson などはリフレクションを前提としているため、native-image 化にあたって膨大な設定が必要になりますが、upickle を選ぶことでその煩雑さを根本から回避しています。
+
+**API 契約上の注意点:** フィールドを `Option[T]` と定義した場合、値が存在しない（`None`）ときは JSON 上で `null` としてシリアライズされます（キー自体は省略されずに出力されます）。README に記載されている「すべてのキーが常に存在し、値がない場合は `null` になる」という仕様は、この実装に由来するものです。したがって、case class のフィールド追加や名前変更は**外部向けの出力仕様に対する破壊的変更（breaking change）**となります。変更時は必ず `schemas/` のスキーマ更新と `tools/schema-check.scala` による検証をセットで行ってください。
 
 ---
 
-## 6. native-image まわりの罠（Java 界特有の異物）
+## 6. native-image まわりの注意点（Java エコシステム特有の制約）
 
-pdfgate で一番壊しやすいのはここです。そして **これは Scala の話ではなく、GraalVM native-image という「Java バイトコードを AOT コンパイルして単体バイナリにする」仕組み特有の事情**です。native-image は「実行時に何が使われるか」を静的に決めきれない要素（リフレクション、動的リソース読み込み、一部のネイティブ連携）を苦手とします。
+pdfgate の開発において、最もデバッグが難しく壊れやすいのがこの領域です。なお、**これは Scala という言語の問題ではなく、GraalVM native-image という「Java バイトコードを AOT コンパイルして単一ネイティブバイナリを生成する」仕組みに由来する固有の制約**です。native-image は静的解析に基づいてバイナリを生成するため、「実行時に何が使われるか」を事前に確定しにくい要素（リフレクション、動的なリソースロード、JNI などのネイティブ連携）の扱いに癖があります。
 
-### 6.1 なぜ改変版 PDFBox（noawt jar）が要るのか
+### 6.1 なぜ改変版 PDFBox（noawt JAR）が必要なのか
 
-**AWT**（Abstract Window Toolkit）とは、Java 標準ライブラリに含まれる GUI・画像処理まわりのパッケージ群（`java.awt.*`）です。ウィンドウ描画やラスタ画像・カラースペースの操作を担い、PDF を**画像にレンダリング**する処理はこれに依存します。pdfgate はレンダリングをしないので、本来 AWT は要りません。ところが AWT は OS のグラフィック機能に密結合しているため、**native-image では扱いが難しく、特に macOS 向けビルドではサポートされていません**。だから「AWT がバイナリに紛れ込むこと」自体を避ける必要があります。
+**AWT**（Abstract Window Toolkit）とは、Java 標準ライブラリに含まれる GUI・画像処理パッケージ群（`java.awt.*`）です。ウィンドウ描画やラスタ画像、カラースペースの変換処理などを担っており、PDF を**画像としてレンダリングする処理**は AWT に依存しています。
+pdfgate はテキストや構造の解析のみを行いレンダリングは行わないため、本来 AWT を必要としません。しかし、AWT は OS ネイティブのグラフィック機能と強く結びついているため、**native-image におけるコンパイルが極めて難しく、特に macOS 向けビルドではサポートされていません**。したがって、AWT への参照がバイナリ内に紛れ込むこと自体を完全に阻止する必要があります。
 
-PDFBox の `PDDocument` は static initializer（クラスが最初に使われる際に一度だけ走る初期化ブロック）で **AWT のカラースペースをウォームアップ**します（本来はレンダリング高速化のため）。pdfgate はレンダリングしないので不要なのに、この一行があるだけで `java.awt.image` がコードから到達可能とみなされ、**native-image が macOS でビルド/起動に失敗**します（前述のとおり AWT サポートは Linux 限定のため）。使いもしない AWT が、初期化コードの都合でバイナリに引きずり込まれてしまう、という構図です。
+厄介なことに、PDFBox の `PDDocument` クラスは static initializer（クラスロード時に一度だけ実行される初期化ブロック `<clinit>`）の中で、将来のレンダリングを高速化する目的で **AWT のカラースペースをウォームアップ**する処理を呼び出しています。pdfgate ではレンダリングを行わないため全く無用な処理ですが、この呼び出しが存在するだけで native-image の静的解析器から `java.awt.image` パッケージ全体が「到達可能（reachable）」と判定されてしまいます。その結果、**macOS 上でのビルドや起動に失敗する**という事態に陥ります。使ってもいない機能の初期化コードのせいで、バイナリ全体が道連れにされる構図です。
 
-`tools/patch-pdfbox.scala` が、ASM（Java バイトコード操作ライブラリ）でこのウォームアップブロック**だけ**を `PDDocument` の `<clinit>` から切除し、`lib/pdfbox-3.0.7-noawt.jar` を生成します。`project.scala` はこの改変版 jar を参照します。上流ライブラリのバイトコードに手を入れているので、`THIRD-PARTY-NOTICES.md` に改変の旨を明記しています（Apache-2.0 第 4 条）。
+この問題を解決するため、`tools/patch-pdfbox.scala` ではバイトコード操作ライブラリ ASM を使い、`PDDocument` の `<clinit>` から該当のウォームアップ処理**のみ**を切除した改変版 JAR（`lib/pdfbox-3.0.7-noawt.jar`）を生成しています。`project.scala` はこの JAR を直接参照することで、AWT 依存を完全に断ち切っています。
+なお、上流ライブラリのバイナリに直接変更を加えているため、ライセンス要件（Apache-2.0 第 4 条）に従い、改変を行った旨を `THIRD-PARTY-NOTICES.md` に明記しています。
 
-→ **PDFBox を更新するとき:** `project.scala` と `tools/patch-pdfbox.scala` のバージョンを揃え、patch を再実行。`<clinit>` の構造が変わっていれば patch スクリプトが失敗して知らせます。
+→ **PDFBox を更新する際の留意点:** `project.scala` と `tools/patch-pdfbox.scala` に記述されたバージョン番号を揃えた上で、patch スクリプトを再実行してください。もし PDFBox 側の更新によって `<clinit>` のバイトコード構造に変化があった場合は、patch スクリプトが検知してエラーを出し、処理を中断します。
 
-### 6.2 reflect-config / resource-config と、その静かなバグ
+### 6.2 reflect-config / resource-config と、その潜在的リスク
 
-`resources/META-INF/native-image/pdfgate/` の設定は、GraalVM の **tracing agent** が「トレース実行中に実際に触ったリフレクション・リソース」を記録して生成したものです。native-image は静的解析でこれらを見つけられないため、明示リストが要ります。
+`resources/META-INF/native-image/pdfgate/` に配置されている設定ファイル群は、GraalVM の **tracing agent** を使って JVM 上でアプリケーションを実行し、「実際にアクセスされたリフレクションやリソースファイル」をプロファイリングして生成したものです。native-image の静的解析ではこれらを自動検出できないため、ホワイトリストとして設定を明示しておく必要があります。
 
-ここに罠があります:
+しかし、ここには重大な落とし穴があります。
 
-> tracing agent は**トレース中に使われた経路しか拾いません**。トレースで踏まなかったフォントや CMap は設定から漏れ、**native バイナリでだけ実行時に失敗**します。JVM 実行では普通に動くので、通常のテストをすり抜けます。
+> tracing agent は、**トレース実行中に実際に通過したコードパスしか記録しません**。そのため、トレース時に読み込まれなかったフォント定義や CMap などは設定から抜け落ちてしまい、**native バイナリを実行した際に初めてランタイムエラーが発生する**ことになります。JVM 上の実行ではクラスパスから動的に読み込めるため、通常のユニットテストをすり抜けてしまいます。
 
-過去に実際、日本語 PDF で使う **CMap**（文字コード → グリフの対応表。CJK フォントで多用され、`Identity-H` エンコーディングの PDF で必要）と、Helvetica 以外の **AFM**（フォントメトリクス）が漏れていて、native でだけ落ちるバグがありました。今は resource-config に `org/apache/fontbox/cmap/.*` と AFM をまとめて含めてあります。ここは PDF ドメイン（フォント/エンコーディング）と native-image の事情が交差する、最も切り分けにくい箇所です。
+実際、過去の開発において、日本語 PDF で頻出する **CMap**（文字コードとグリフの対応表。CJK フォントや `Identity-H` エンコーディングで必須）や、Helvetica 以外の **AFM**（フォントのメトリクスファイル）が設定から漏れており、native バイナリでのみクラッシュするという問題が発生しました。現在はこうした事態を防ぐため、`resource-config.json` に `org/apache/fontbox/cmap/.*` や各種 AFM を正規表現で網羅的に含めています。PDF 特有の仕様（フォントと文字エンコーディング）と native-image の制約が交錯する、最もトラブルシューティングが難しい領域です。
 
-→ **教訓:** 依存更新や新種の PDF 対応をしたら、**native バイナリでスモークテスト**を回すこと。「JVM で通るのに native で落ちる」なら、まず §6 を疑ってください（Scala コードのバグではまずない）。
+→ **運用の教訓:** 依存ライブラリを更新した際や、未知の構造を持つ PDF に対応した際は、必ず **native バイナリを用いたスモークテスト（`scripts/smoke.sh`）を実行してください**。「JVM 上ではテストが通るのに native バイナリだと異常終了する」という場合は、Scala コードのロジックではなく、十中八九この §6 で述べた設定漏れが原因です。
 
 ---
 
 ## 7. テストと検証（4 段構え）
 
-| 手段                          | 何を保証するか                                                              | どこ                      |
-| ----------------------------- | --------------------------------------------------------------------------- | ------------------------- |
-| munit（JVM）                  | 解析ロジックの正しさ。速い。日常開発はこれ                                  | `test/PdfgateSuite.scala` |
-| `scripts/smoke.sh`            | **native バイナリ**が JVM と同じ JSON を出すこと（§6 の設定漏れ検出）       | CI                        |
-| `tools/schema-check.scala`    | 実バイナリ出力が `schemas/` の JSON Schema に適合すること（出力契約の維持） | CI                        |
-| `tools/poppler-compare.scala` | ページ数・テキストなどが poppler と概ね一致すること                         | CI                        |
+| 検証手段 | 保証する内容 | 実行環境 |
+|---|---|---|
+| munit（JVM） | 解析ロジックの正しさ（高速に動作するため、日常の開発サイクルで利用） | `test/PdfgateSuite.scala` |
+| `scripts/smoke.sh` | **native バイナリ**が JVM 実行時と同一の JSON を出力すること（§6 の設定漏れの検出） | CI |
+| `tools/schema-check.scala` | 実バイナリの出力が `schemas/` の JSON Schema に適合すること（出力契約の維持） | CI |
+| `tools/poppler-compare.scala` | ページ数やテキストなどの抽出結果が poppler と概ね一致することの検証 | CI |
 
-テスト PDF は外部ファイルではなく **`testkit/Fixtures.scala` がコードで生成**します（レイヤー付き・JS 付き・暗号化・日本語など）。バイト操作で壊した PDF も作れるので、エラー正規化と exit 2 も再現できます。
+テスト用の PDF は静的なファイルを配置するのではなく、**`testkit/Fixtures.scala` 内のコードによって動的に生成**しています（レイヤー付き、JavaScript 埋め込み、暗号化、日本語文字列など）。さらに生バイト列を意図的に破損させた PDF も生成できるため、パースエラーの正規化処理や exit code 2 の挙動も網羅的にテスト可能です。
 
-`smoke.sh` が「JVM 出力 == native 出力」を確認しているのは、まさに §6 の設定漏れを CI で炙り出すためです。
-
----
-
-## 8. コントリビュートの実務ガイド
-
-### 新しい危険要素の検出を足す
-
-1. `Scan.scala` の `inspect` に判定を追加し `Finding(kind, ...)` を積む（`kind` を新設）。
-2. その `kind` を `Validate.scala` の `Policy.defaultRules` に `deny`/`warn` で登録。
-3. `schemas/scan.schema.json` と `schemas/validate.schema.json` の enum に `kind` を追加。
-4. `Fixtures.scala` にその要素を持つ PDF を追加し、`PdfgateSuite.scala` でアサート。
-5. README の一覧表・出力例も更新。
-
-### 出力フィールドを足す/変える
-
-- `output/Model.scala` の case class を変更 → 対応する `schemas/*.schema.json` を更新 → `tools/schema-check.scala` が通ることを確認。**JSON の破壊的変更**に直結するので慎重に。
-
-### PDFBox を更新する
-
-- §6.1（patch 再実行）と §6.2（native スモーク）を必ず通す。
-
-### 依存の自動更新
-
-- scala-cli の `//> using dep`（`project.scala`）は Dependabot も Scala Steward も素直に読めません（両者とも sbt/Maven/Gradle 前提）。依存更新は基本**手動**です。GitHub Actions のバージョン更新だけは Dependabot で自動化できます。
+CI 上で `smoke.sh` が「JVM 実行時の JSON 出力」と「native バイナリの JSON 出力」を厳密に突き合わせているのは、まさに §6 で解説した native-image 特有の設定漏れを確実に検知するための仕掛けです。
 
 ---
 
-## 9. 「Scala のせい / PDF のせい / native-image のせい」早見表
+## 8. コントリビューションガイド
 
-詰まったときの当たり付けに。
+### 危険要素の検出ルールを追加する
 
-| 症状・トピック                                   | どの領域の話か                                  | 参照        |
-| -------------------------------------------------| ----------------------------------------------- | ----------- |
-| `//> using` が効かない、依存が引けない           | Scala エコシステム（scala-cli / Maven Central） | §3          |
-| `PDDocument` の close 忘れ、`null` が飛んでくる  | Java 連携の作法                                 | §5.2 / §5.3 |
-| JSON のキーが増減した、`null` の扱い             | upickle（Scala ライブラリ）の作法               | §5.7        |
-| 「危険要素が検出漏れする」「どこを探せばいい？」 | PDF ドメイン（COS グラフ・アクションの散在）    | §5.4        |
-| レイヤー/フォーム/XFA/署名の意味が分からない     | PDF ドメイン（仕様の歴史的経緯）                | §5.3        |
-| CMap / AFM / Identity-H / フォント解決           | PDF ドメイン ×（native では）native-image       | §6.2        |
-| **JVM では動くのに native バイナリで落ちる**     | ほぼ native-image 設定（Scala バグではない）    | §6          |
-| macOS で native ビルドが壊れる                   | native-image × AWT                              | §6.1        |
+1. `Scan.scala` の `inspect` メソッドに判定ロジックを追加し、`Finding(kind, ...)` を生成する（新しい `kind` を定義）。
+2. 追加した `kind` を `Validate.scala` の `Policy.defaultRules` に登録し、デフォルトの判定（`deny` または `warn`）を指定する。
+3. `schemas/scan.schema.json` および `schemas/validate.schema.json` の enum 定義に新しい `kind` を追加する。
+4. `Fixtures.scala` に該当要素を含むテスト用 PDF の生成処理を追加し、`PdfgateSuite.scala` で検出のテストケースを記述する。
+5. `README.md` の危険要素一覧や出力例にも反映する。
 
-まず読むなら `Doc.scala`（短く、設計思想が凝縮されている）→ `Scan.scala`（PDF ドメインの核心）の順がおすすめです。
+### 出力 JSON のフィールドを追加・変更する
+
+- `output/Model.scala` の case class を変更した後、対応する `schemas/*.schema.json` を更新し、`tools/schema-check.scala` がパスすることを確認します。出力スキーマの変更は**外部利用側にとっての破壊的変更（breaking change）**に直結するため、慎重に検討してください。
+
+### PDFBox のバージョンを更新する
+
+- §6.1 に従い patch スクリプトを再実行した上で、§6.2 に従って native バイナリのスモークテストを必ず通過させてください。
+
+### 依存ライブラリの自動更新について
+
+- `project.scala` に記述されている scala-cli の `//> using dep` ディレクティブは、Dependabot や Scala Steward が標準では対応していません（従来の sbt, Maven, Gradle を想定しているため）。そのため、ライブラリの依存更新は原則として**手動**で行う必要があります。なお、GitHub Actions のワークフローのバージョン更新については Dependabot による自動更新が有効です。
+
+---
+
+## 9. トラブルシューティング早見表（原因の切り分け）
+
+問題が発生した際、どの領域に原因があるかを素早く切り分けるためのヒントです。
+
+| 症状・トピック | 原因の所在 | 参照 |
+|---|---|---|
+| `//> using` が効かない、依存パッケージが解決できない | Scala エコシステム（scala-cli / Maven Central） | §3 |
+| `PDDocument` のクローズ漏れ、`null` による例外 | Java 相互運用の作法 | §5.2 / §5.3 |
+| JSON のキーが増減した、`null` のシリアライズ挙動 | upickle（Scala ライブラリ）の仕様 | §5.7 |
+| 危険要素が検出されない、探索対象の場所が分からない | PDF ドメイン固有の仕様（COS グラフ・アクションの散在） | §5.4 |
+| レイヤー / フォーム / XFA / 署名の仕様が分からない | PDF ドメイン固有の仕様（仕様の歴史的経緯） | §5.3 |
+| CMap / AFM / Identity-H / フォント解決の失敗 | PDF ドメイン仕様 × native-image リソース設定 | §6.2 |
+| **JVM では正常に動くのに native バイナリでクラッシュする** | ほぼ確実に native-image の設定漏れ（Scala コードの不具合ではない） | §6 |
+| macOS 上で native ビルドまたは起動に失敗する | native-image × AWT の非互換性 | §6.1 |
+
+コードリーディングを始める際は、短く設計思想が凝縮された `Doc.scala` から読み始め、続いて PDF 仕様の核心を突いている `Scan.scala` へ進むのがおすすめです。

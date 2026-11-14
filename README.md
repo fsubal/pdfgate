@@ -1,57 +1,57 @@
 # pdfgate
 
-Apache PDFBox ベースの PDF 検査 CLI。GraalVM native-image で単一バイナリにコンパイルされ、**JVM なしで動作**します。Web サービスにアップロードされた信頼できない PDF のバリデーションを主用途とした、poppler の高機能な代替です。
+Apache PDFBox をベースとした PDF 検査用 CLI ツールです。GraalVM native-image により単一の実行可能バイナリとしてコンパイルされており、**JVM なしで動作**します。Web サービス等にアップロードされた信頼できない（untrusted な）PDF の検証を主な用途とし、poppler よりも詳細な構造解析が可能です。
 
-すべてのコマンドは stdout に JSON を出力し、診断メッセージは stderr に出します。
+各コマンドは解析結果の JSON を標準出力（stdout）に出力し、診断メッセージは標準エラー出力（stderr）に出力します。
 
 ## コマンド
 
-| コマンド | 内容 |
-|---|---|
-| `pdfgate info <file>` | バージョン・ページ数・メタデータ・ファイル構造（オブジェクト数、インクリメンタル更新回数、%%EOF 後のデータなど） |
-| `pdfgate layers <file>` | レイヤー（Optional Content Groups）の一覧と表示状態 |
-| `pdfgate forms <file>` | AcroForm フィールドツリー、XFA の有無・種別、署名フィールド数 |
-| `pdfgate crypto <file>` | 暗号化方式・キー長・パーミッション、電子署名の一覧 |
-| `pdfgate scan <file>` | 危険要素の列挙: JavaScript、Launch/URI/GoToR/SubmitForm アクション、埋め込みファイル、XFA、RichMedia など |
-| `pdfgate validate <file> [--policy <file>]` | ポリシーに基づく総合判定 |
-| `pdfgate text <file> [--pages a-b] [--max-chars n]` | テキスト抽出（pdftotext 相当） |
+| コマンド                                            | 内容                                                                                                             |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `pdfgate info <file>`                               | バージョン・ページ数・メタデータ・ファイル構造（オブジェクト数、インクリメンタル更新回数、%%EOF 後のデータなど） |
+| `pdfgate layers <file>`                             | レイヤー（Optional Content Groups）の一覧と表示状態                                                              |
+| `pdfgate forms <file>`                              | AcroForm フィールドツリー、XFA の有無・種別、署名フィールド数                                                    |
+| `pdfgate crypto <file>`                             | 暗号化方式・キー長・パーミッション、電子署名の一覧                                                               |
+| `pdfgate scan <file>`                               | 危険要素の列挙: JavaScript、Launch/URI/GoToR/SubmitForm アクション、埋め込みファイル、XFA、RichMedia など        |
+| `pdfgate validate <file> [--policy <file>]`         | ポリシーに基づく総合判定                                                                                         |
+| `pdfgate text <file> [--pages a-b] [--max-chars n]` | テキスト抽出（pdftotext 相当）                                                                                   |
 
-暗号化 PDF には各コマンド共通の `--password <pw>` を指定できます。
+暗号化された PDF を扱う場合は、全コマンド共通のオプション `--password <pw>` でパスワードを指定できます。
 
 ## Exit code
 
-| code | 意味 |
-|---|---|
-| 0 | 問題なし（validate では warn のみも含む） |
-| 1 | validate: ポリシー違反（deny）あり |
-| 2 | 破損・パース不能・パスワード不明で解析不能 |
-| 3 | 使用法エラー |
+| code | 意味                                                                    |
+| ---- | ----------------------------------------------------------------------- |
+| 0    | 正常終了（validate における warn のみの場合も含む）                     |
+| 1    | validate: ポリシー違反（deny）の検出                                    |
+| 2    | 解析不能（ファイルの破損、パース失敗、パスワード未指定など）            |
+| 3    | CLI の使用法エラー（無効な引数、`--policy` ファイルの読み込み失敗など） |
 
-解析中の例外はすべて捕捉され、`{"error":{"code":"parse-failure",...}}` の JSON に正規化されます（exit 2）。
+解析中に発生した例外はすべて内部で捕捉され、`{"error":{"code":"parse-failure",...}}` という形式の JSON に正規化して出力されます（exit code 2）。
 
 ## 出力 JSON
 
-各コマンドの出力は [`schemas/`](schemas/) に JSON Schema (draft 2020-12) として定義してあります。コード生成やレスポンス検証にそのまま使えます。
+各コマンドの出力仕様は、[`schemas/`](schemas/) 配下に JSON Schema (draft 2020-12) として定義されています。API クライアントのコード生成やレスポンス検証にそのまま利用できます。
 
-| コマンド | スキーマ |
-|---|---|
-| `info` | [`schemas/info.schema.json`](schemas/info.schema.json) |
-| `layers` | [`schemas/layers.schema.json`](schemas/layers.schema.json) |
-| `forms` | [`schemas/forms.schema.json`](schemas/forms.schema.json) |
-| `crypto` | [`schemas/crypto.schema.json`](schemas/crypto.schema.json) |
-| `scan` | [`schemas/scan.schema.json`](schemas/scan.schema.json) |
-| `validate` | [`schemas/validate.schema.json`](schemas/validate.schema.json) |
-| `text` | [`schemas/text.schema.json`](schemas/text.schema.json) |
-| すべて (exit 2) | [`schemas/error.schema.json`](schemas/error.schema.json) |
+| コマンド        | スキーマ                                                       |
+| --------------- | -------------------------------------------------------------- |
+| `info`          | [`schemas/info.schema.json`](schemas/info.schema.json)         |
+| `layers`        | [`schemas/layers.schema.json`](schemas/layers.schema.json)     |
+| `forms`         | [`schemas/forms.schema.json`](schemas/forms.schema.json)       |
+| `crypto`        | [`schemas/crypto.schema.json`](schemas/crypto.schema.json)     |
+| `scan`          | [`schemas/scan.schema.json`](schemas/scan.schema.json)         |
+| `validate`      | [`schemas/validate.schema.json`](schemas/validate.schema.json) |
+| `text`          | [`schemas/text.schema.json`](schemas/text.schema.json)         |
+| すべて (exit 2) | [`schemas/error.schema.json`](schemas/error.schema.json)       |
 
-スキーマが実際の出力と一致することは `tools/schema-check.scala` が CI で検証しています（実バイナリの出力を全コマンド分バリデートするので、実装がずれたら CI が落ちます）。
+実際の出力とスキーマの整合性は、CI 上で `tools/schema-check.scala` により検証されています。実バイナリを用いて全コマンドの出力をバリデートしているため、実装とスキーマに不整合が生じた場合は CI が失敗します。
 
-### 共通の約束
+### 設計上の規約
 
-- **すべてのキーは常に存在します。** 値がない場合はキーを省略せず `null` になります（`Option` は `null` に直列化）。
-- 文字列は UTF-8。日本語などの非 ASCII 文字はエスケープせずそのまま出力します。
-- `message` 系のフィールドは人間向けで、文言は予告なく変わります。プログラムから分岐する場合は `code` / `kind` / `severity` を使ってください。
-- exit code 3（使用法エラー、`--policy` の読み込み失敗）では stdout に JSON は出ません。診断は stderr に出ます。
+- **すべてのキーが常に含まれます。** 値が存在しない場合でもキーは省略されず、値として `null` が入ります（Scala の `Option` は `null` にシリアライズされます）。
+- **文字コードは UTF-8 です。** 日本語などの非 ASCII 文字も Unicode エスケープせず、そのまま出力されます。
+- **`message` 系のフィールドは人間向けの文字列です。** 文言は予告なく変更される可能性があります。プログラム側で条件分岐を行う場合は、`code`、`kind`、`severity` を参照してください。
+- **exit code 3 では JSON は出力されません。** 引数の誤りや `--policy` の読み込み失敗などの使用法エラー時は、stderr に診断メッセージのみを出力します。
 
 ### 出力例
 
@@ -88,7 +88,8 @@ Apache PDFBox ベースの PDF 検査 CLI。GraalVM native-image で単一バイ
 }
 ```
 
-パスワード不明の暗号化 PDF では `passwordRequired: true` になり、`version` / `pages` / `metadata` / `xmpPresent` が `null` になります（`structure` はバイトレベルの解析なので常に入ります）。`crypto` も同様です。
+パスワード未指定の暗号化 PDF の場合、`passwordRequired: true` となり、`version`、`pages`、`metadata`、`xmpPresent` は `null` になります（`structure` は生バイト列の解析結果であるため、常に値が入ります）。`crypto` コマンドも同様の挙動です。
+
 </details>
 
 <details>
@@ -98,7 +99,11 @@ Apache PDFBox ベースの PDF 検査 CLI。GraalVM native-image で単一バイ
 {
   "findings": [
     { "kind": "javascript", "objectNumber": 3, "detail": null },
-    { "kind": "uri-action", "objectNumber": 9, "detail": "https://example.com/exfil" }
+    {
+      "kind": "uri-action",
+      "objectNumber": 9,
+      "detail": "https://example.com/exfil"
+    }
   ],
   "counts": { "javascript": 1, "uri-action": 1 }
 }
@@ -106,7 +111,8 @@ Apache PDFBox ベースの PDF 検査 CLI。GraalVM native-image で単一バイ
 
 `kind` の取りうる値: `javascript`, `launch-action`, `uri-action`, `remote-goto`, `submit-form`, `import-data`, `movie`, `sound`, `rendition`, `file-attachment-annotation`, `richmedia`, `3d-content`, `embedded-file`, `embedded-files-name-tree`, `xfa`。
 
-`detail` は種別ごとの補足で、`uri-action` なら遷移先 URL、`launch-action` / `remote-goto` / `submit-form` / `import-data` / `embedded-file` なら対象ファイル名が入ります。
+`detail` は検出項目ごとの補足情報です。`uri-action` では遷移先 URL が、`launch-action` / `remote-goto` / `submit-form` / `import-data` / `embedded-file` では対象のファイル名が入ります。
+
 </details>
 
 <details>
@@ -117,29 +123,42 @@ Apache PDFBox ベースの PDF 検査 CLI。GraalVM native-image で単一バイ
   "ok": false,
   "issues": [
     { "severity": "deny", "code": "javascript", "message": "1 occurrence(s)" },
-    { "severity": "warn", "code": "uri-action", "message": "1 occurrence(s); e.g. https://example.com/exfil" }
+    {
+      "severity": "warn",
+      "code": "uri-action",
+      "message": "1 occurrence(s); e.g. https://example.com/exfil"
+    }
   ]
 }
 ```
 
-`issues` は deny が先、その中では `code` 順にソートされます。`ok` は deny が 1 件もないことと同値で、exit code 0/1 と対応します。ポリシーで `allow` にした種別は `issues` に現れません。
+`issues` は `deny` が先頭に並び、同一 severity 内では `code` 順にソートされます。`ok` は `deny` が 1 件も存在しない場合に `true` となり、exit code（0: 正常 / 1: ポリシー違反）と連動します。なお、ポリシーで `allow` に設定した項目は `issues` に出力されません。
 
-`code` は上記の `scan` の `kind` 全種に加えて、`encrypted`, `password-protected`, `incremental-update`, `data-after-eof`, `max-pages-exceeded`, `max-objects-exceeded` を取ります。
+`code` には、前述した `scan` の全 `kind` に加え、`encrypted`、`password-protected`、`incremental-update`、`data-after-eof`、`max-pages-exceeded`、`max-objects-exceeded` が設定されます。
+
 </details>
 
 <details>
 <summary>エラー (exit 2)</summary>
 
 ```json
-{ "error": { "code": "parse-failure", "message": "IOException: Page tree root must be a dictionary" } }
+{
+  "error": {
+    "code": "parse-failure",
+    "message": "IOException: Page tree root must be a dictionary"
+  }
+}
 ```
 
-`code` は `parse-failure`（破損・パース不能）か `password-required`（パスワードなしでは解析できない）のいずれかです。なお `info` と `crypto` はパスワード不明でもエラーにせず `passwordRequired: true` を返し、`validate` は `password-protected` の issue として報告します。
+`code` は `parse-failure`（破損やパース失敗）または `password-required`（パスワードが必要）のいずれかです。なお、`info` と `crypto` コマンドはパスワードが指定されていなくてもエラー終了（exit 2）とはせず、`passwordRequired: true` の JSON を返します。一方、`validate` は `password-protected` を検出した issue として報告します。
+
 </details>
 
 ## validate のポリシー
 
-デフォルトでは JavaScript・Launch/GoToR/SubmitForm/ImportData アクション・埋め込みファイル・RichMedia・パスワード保護を **deny**、URI アクション・XFA・添付アノテーション・暗号化・インクリメンタル更新・%%EOF 後のデータを **warn** とします。`--policy` の JSON で上書きできます:
+デフォルトのポリシーでは、JavaScript、各種アクション（Launch/GoToR/SubmitForm/ImportData）、埋め込みファイル、RichMedia、パスワード保護を **deny** と判定します。また、URI アクション、XFA、添付ファイルのアノテーション、暗号化、インクリメンタル更新、%%EOF 後の余剰データは **warn** とします。
+
+これらの判定ルールは、`--policy` に JSON ファイルを指定することでカスタマイズできます。
 
 ```json
 {
@@ -149,11 +168,11 @@ Apache PDFBox ベースの PDF 検査 CLI。GraalVM native-image で単一バイ
 }
 ```
 
-`rules` の値は `deny` / `warn` / `allow`。指定しなかったキーは内蔵デフォルトが使われます。
+`rules` に指定可能な値は `deny` / `warn` / `allow` のいずれかです。JSON で指定しなかったキーには、内蔵のデフォルト値が適用されます。
 
 ## ビルド
 
-必要なもの: [scala-cli](https://scala-cli.virtuslab.org/)（GraalVM は自動取得されます）
+必要なもの: [scala-cli](https://scala-cli.virtuslab.org/)（GraalVM はビルド時に自動で取得されます）
 
 ```sh
 # 1. AWT 依存を除去した patched PDFBox jar を生成（初回と PDFBox 更新時のみ）
@@ -175,7 +194,7 @@ scala-cli run tools/schema-check.scala -- ./pdfgate fixtures
 
 ### 完全静的リンク (musl) — scratch コンテナ向け
 
-Linux x86_64 に限り、libc 非依存の完全静的バイナリを作れます（Releases の `pdfgate-linux-x86_64-static`）。glibc のないコンテナ（scratch / distroless / busybox / alpine）でそのまま動きます:
+Linux x86_64 環境では、libc に依存しない完全静的リンクバイナリをビルドできます（Releases で配布している `pdfgate-linux-x86_64-static` に相当）。glibc のない軽量コンテナ環境（scratch, distroless, busybox, alpine など）でもそのまま実行可能です。
 
 ```sh
 scala-cli --power package --assembly . -o pdfgate-assembly.jar --preamble=false
@@ -185,17 +204,19 @@ docker run --rm -v "$PWD:/work" -w /work \
   -o pdfgate-linux-x86_64-static
 ```
 
-musl 静的イメージは GraalVM の制約で linux-amd64 のみです（aarch64 は通常の動的リンク版を使ってください）。
+※ GraalVM の制約により、musl による静的バイナリ生成は linux-amd64 のみに対応しています（aarch64 環境では通常の動的リンク版をご利用ください）。
 
 ### なぜ patched jar が必要か
 
-PDFBox の `PDDocument` は static initializer でレンダリング用の AWT カラースペースをウォームアップしますが、GraalVM native-image の AWT サポートは Linux 限定のため macOS でバイナリが起動しなくなります。pdfgate はレンダリングを行わないので、`tools/patch-pdfbox.scala` が ASM でこのウォームアップブロックだけをバイトコードから除去します（`RESERVE_BYTE_RANGE` / `LOG` などのフィールド初期化は保持）。これにより AWT が完全に到達不能になり、全プラットフォームで同一の挙動になります。
+PDFBox の `PDDocument` クラスは、static initializer 内でレンダリング用の AWT カラースペースをウォームアップ（事前初期化）します。しかし、GraalVM native-image の AWT サポートは Linux 環境に限定されているため、このままコンパイルすると macOS 上でバイナリが起動できなくなります。
 
-PDFBox を更新するときは `project.scala` と `tools/patch-pdfbox.scala` のバージョンを揃えて patch を再実行してください。patch スクリプトは `<clinit>` の構造が想定と変わった場合に失敗して知らせます。
+pdfgate はレンダリングを行わないため、`tools/patch-pdfbox.scala` を使って ASM により該当の初期化ブロックだけをバイトコードから切除しています（`RESERVE_BYTE_RANGE` や `LOG` などのフィールド初期化はそのまま保持されます）。これにより AWT への参照が完全に到達不能となり、全プラットフォームで統一された動作を実現しています。
+
+PDFBox のバージョンを更新する際は、`project.scala` と `tools/patch-pdfbox.scala` のバージョンを揃えた上で patch スクリプトを再実行してください。もし `<clinit>` のバイトコード構造が想定と異なっていた場合は、スクリプトがエラーを報告して停止します。
 
 ### native-image メタデータ
 
-`resources/META-INF/native-image/pdfgate/` の設定は GraalVM tracing agent で生成しています。依存を更新して挙動が変わった場合は再生成してください:
+`resources/META-INF/native-image/pdfgate/` 配下の設定ファイルは、GraalVM tracing agent を用いて生成しています。依存ライブラリの更新などで動作が変わった場合は、以下の手順で設定を再生成してください。
 
 ```sh
 CFG=resources/META-INF/native-image/pdfgate
@@ -205,24 +226,26 @@ scala-cli run . --jvm graalvm-community:21.0.2 \
 # 以降のコマンドは config-merge-dir=$CFG で追記マージ（全コマンド・全フィクスチャを一巡させる）
 ```
 
-JVM 実行と native 実行の JSON が一致することは `scripts/smoke.sh` が担保します。
+JVM 実行時と native バイナリ実行時で出力 JSON が一致することは、`scripts/smoke.sh` によるテストで担保されています。
 
 ## 組み込み例
 
-[`examples/`](examples/) に、S3 + 隔離 Lambda での検査と Rails / ActiveStorage のアップロードバリデーションのサンプルがあります。
+[`examples/`](examples/) に、S3 と隔離環境（AWS Lambda）を組み合わせた検査アーキテクチャや、Rails (ActiveStorage) でのアップロード検証の実装例を用意しています。
 
 ## 信頼できない入力に対する運用上の注意
 
-pdfgate は例外を正規化し解析専用（レンダリングなし）ですが、意図的に細工された PDF は CPU・メモリを浪費させる可能性があります。サーバーサイドでは必ず:
+pdfgate はレンダリングを行わず解析に特化しており、内部エラーも安全に正規化されます。しかし、意図的に細工された PDF を処理させた場合、CPU やメモリを過度に浪費させられるリスクは排除できません。そのため、サーバーサイドで運用する際は必ず以下の対策を実施してください。
 
-- タイムアウト付きで実行する（例: `timeout 30 pdfgate validate upload.pdf`）
-- メモリ上限を課す（cgroup / `ulimit -v` など）
-- 可能ならサンドボックス（コンテナ、seccomp）内で実行する
+- タイムアウトを設定して実行する（例: `timeout 30 pdfgate validate upload.pdf`）
+- メモリ使用量の上限を設ける（cgroup、`ulimit -v` など）
+- 可能な限り隔離されたサンドボックス環境（コンテナ、seccomp など）で実行する
 
-`text` は `--max-chars`（デフォルト 1,000,000）で出力量を制限します。
+なお、`text` コマンドには `--max-chars`（デフォルト 1,000,000 文字）が用意されており、過度なテキスト出力量を制限できます。
 
 ## ライセンス
 
 [Apache License 2.0](LICENSE)
 
-中核となる Apache PDFBox / FontBox が Apache-2.0 であり、ネイティブバイナリはそれらを静的リンクして同梱するため、同じライセンスに揃えています。配布バイナリを再頒布する場合は、[`LICENSE`](LICENSE)・[`NOTICE`](NOTICE)・[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) を添付してください（Apache-2.0 第 4 条および MIT 依存の著作権表示要件）。同梱される依存とそのライセンスの一覧は [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) にあります。
+中核コンポーネントである Apache PDFBox / FontBox が Apache-2.0 で公開されており、ネイティブバイナリはそれらを静的リンクして同梱するため、同一のライセンスを採用しています。
+
+ビルド済みバイナリを再頒布する場合は、[`LICENSE`](LICENSE)、[`NOTICE`](NOTICE)、および [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) を同梱してください（Apache-2.0 第 4 条および各依存ライブラリの著作権表示要件に基づく）。同梱される全依存ライブラリとそのライセンス一覧は、[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) を参照してください。
