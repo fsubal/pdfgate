@@ -1,16 +1,17 @@
-"""S3 の ObjectCreated イベントで起動し、アップロードされた PDF を pdfgate で検査する。
+"""S3 の ObjectCreated イベントをトリガーに起動し、アップロードされた PDF を pdfgate で検査する Lambda ハンドラー。
 
-結果に応じて:
-  - クリーン        → オブジェクトに scan-status=clean タグを付ける
-  - ポリシー違反     → 隔離バケットへ移動し、findings をタグに残す
-  - 破損・解析不能   → 同じく隔離（検査できないファイルは通さない）
+検査結果に応じた処理:
+  - クリーン（問題なし）: オブジェクトに scan-status=clean タグを付与
+  - ポリシー違反       : 隔離用バケットへ移動し、違反内容（findings）をタグに記録
+  - 破損・解析不能     : 同様に隔離用バケットへ移動（安全性を検証できないファイルは通過させない）
 
-この関数自体が「隔離環境」になるよう、IAM は次の最小権限にする:
-  - s3:GetObject / s3:PutObjectTagging  (アップロード先バケットの対象プレフィックス)
-  - s3:PutObject                        (隔離バケット)
-  - s3:DeleteObject                     (アップロード先バケットの対象プレフィックス)
-アップロード先の公開・配信は scan-status=clean タグを条件にする
-(例: CloudFront の前段の署名発行サービスがタグを確認する)。
+本関数自体が最小権限の隔離環境として動作するよう、IAM ポリシーは必要最小限に絞り込みます:
+  - s3:GetObject / s3:PutObjectTagging (アップロード先バケットの対象プレフィックス)
+  - s3:PutObject                       (隔離バケット)
+  - s3:DeleteObject                    (アップロード先バケットの対象プレフィックス)
+
+アップロードされたファイルの公開・配信処理は、scan-status=clean タグの存在を前提とします
+（例: CloudFront の前段で署名付き URL を発行する認可サービスがタグを確認するなど）。
 """
 
 import json
@@ -22,9 +23,9 @@ import boto3
 
 PDFGATE = "/opt/bin/pdfgate"
 QUARANTINE_BUCKET = os.environ["QUARANTINE_BUCKET"]
-# 解析タイムアウト(秒)。Lambda 自体のタイムアウトより短くすること
+# 解析のタイムアウト（秒）。Lambda 関数自体のタイムアウトより短く設定すること
 SCAN_TIMEOUT = int(os.environ.get("SCAN_TIMEOUT", "25"))
-# 巨大ファイルは検査以前に拒否する
+# 上限を超える巨大ファイルは検査前に拒否する
 MAX_BYTES = int(os.environ.get("MAX_BYTES", str(50 * 1024 * 1024)))
 
 s3 = boto3.client("s3")
@@ -55,7 +56,7 @@ def inspect_object(bucket: str, key: str) -> dict:
             timeout=SCAN_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        # 解析に時間をかけさせるファイルは細工を疑って隔離する
+        # 処理に異常な時間がかかるファイルは、DoS 細工を疑って隔離
         return quarantine(bucket, key, reason="scan-timeout", detail=f"{SCAN_TIMEOUT}s")
     finally:
         os.remove(local)
@@ -78,7 +79,7 @@ def inspect_object(bucket: str, key: str) -> dict:
         denied = [i["code"] for i in report["issues"] if i["severity"] == "deny"]
         return quarantine(bucket, key, reason="policy-violation", detail=",".join(denied))
 
-    # exit 2 (破損・解析不能) と想定外の exit code はすべて隔離
+    # exit code 2（破損・解析不能）および想定外の終了コードはすべて隔離
     return quarantine(bucket, key, reason="unparseable", detail=proc.stdout[:255])
 
 

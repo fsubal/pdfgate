@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
-# ActiveStorage の添付を保存する前に pdfgate で検査するバリデータ。
+# ActiveStorage の添付ファイルを保存する前に pdfgate で検証するカスタムバリデータ。
 #
 #   class Document < ApplicationRecord
 #     has_one_attached :file
 #     validates :file, pdf_safety: true
 #   end
 #
-# バリデーションはレコード保存前（= blob がストレージへアップロードされる前）に
-# 動くため、危険な PDF はストレージに一切書き込まれない。
+# バリデーションはレコード保存前（= blob が実ストレージへアップロードされる前）に
+# 実行されるため、危険な PDF がストレージへ永続化されるのを未然に防ぎます。
 class PdfSafetyValidator < ActiveModel::EachValidator
   DENY_MESSAGES = {
     "javascript" => "JavaScript が埋め込まれた PDF はアップロードできません",
@@ -22,14 +22,15 @@ class PdfSafetyValidator < ActiveModel::EachValidator
 
   def validate_each(record, attribute, _value)
     attachable = record.attachment_changes[attribute.to_s]&.attachable
-    # 新しい添付があるときだけ検査する。attachable が Tempfile を持たない形
-    # （署名付き blob ID の再添付など）は検査済みとみなしてスキップ
+    # 新規にファイルが添付された場合のみ検査を実行する。
+    # attachable が tempfile を持たないケース（署名付き blob ID による再添付など）は
+    # 検査済みとみなしてスキップする。
     return unless attachable.respond_to?(:tempfile)
 
     result = Pdfgate.validate(attachable.tempfile.path, timeout: scan_timeout)
 
     if result.error
-      # timeout / parse-failure / password-required はすべて「読めない物」として拒否
+      # timeout / parse-failure / password-required は安全性を検証できないため一律拒否
       record.errors.add(attribute, DENY_MESSAGES.fetch(result.error, UNREADABLE))
       return
     end
@@ -38,7 +39,7 @@ class PdfSafetyValidator < ActiveModel::EachValidator
       record.errors.add(attribute, DENY_MESSAGES.fetch(code) { DENY_FALLBACK % code })
     end
 
-    # warn はブロックせずログに残す（URI アクション・XFA・暗号化など）
+    # warn レベルの項目はアップロードをブロックせず、ログ出力にとどめる（URI アクション、XFA、暗号化など）
     if result.warn_codes.any?
       Rails.logger.info(
         "[pdfgate] #{record.class.name}##{attribute}: warnings=#{result.warn_codes.uniq.join(',')}"

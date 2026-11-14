@@ -3,9 +3,9 @@
 require "open3"
 require "json"
 
-# pdfgate CLI の薄いラッパー。
-# タイムアウト時は子プロセスを確実に kill する（Timeout.timeout では
-# 子プロセスが生き残るため、wait_thr.join ベースで実装している）。
+# pdfgate CLI の軽量ラッパークラス。
+# タイムアウト発生時に子プロセスを確実に強制終了（SIGKILL）させるため、
+# Ruby 標準の Timeout.timeout ではなく Process.kill と wait_thr.join を用いて実装している。
 class Pdfgate
   Result = Struct.new(:ok, :exit_code, :issues, :error, keyword_init: true) do
     alias_method :ok?, :ok
@@ -21,8 +21,11 @@ class Pdfgate
 
   BIN = ENV.fetch("PDFGATE_BIN", "pdfgate")
 
-  # @return [Result] ok?=true は「ポリシー違反なし」。
-  #   error には "timeout" / "parse-failure" / "password-required" などが入る
+  # @param path [String, Pathname] 検証対象の PDF ファイルパス
+  # @param policy [String, Pathname, nil] ポリシー設定 JSON のファイルパス（省略時はデフォルト）
+  # @param timeout [Integer] タイムアウト秒数
+  # @return [Result] ok?=true は「ポリシー違反なし（正常または warn のみ）」を表す。
+  #   error には "timeout" / "parse-failure" / "password-required" などが格納される。
   def self.validate(path, policy: nil, timeout: 20)
     args = [BIN, "validate", path.to_s]
     args.push("--policy", policy.to_s) if policy

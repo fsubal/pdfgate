@@ -1,10 +1,10 @@
 # サードパーティライセンス
 
-pdfgate の配布バイナリは GraalVM native-image で生成されており、以下の依存ライブラリを**静的リンクして同梱**しています。したがってバイナリの再配布は、これらのライブラリのバイナリ再頒布にあたります。ソースコード配布・バイナリ配布のいずれの場合も、本ファイルと [`LICENSE`](LICENSE) / [`NOTICE`](NOTICE) を添付してください。
+pdfgate の配布バイナリは GraalVM native-image でビルドされており、以下のサードパーティライブラリを**静的リンクして同梱**しています。そのため、本バイナリの再配布はこれらのライブラリのバイナリ再頒布に該当します。ソースコード配布およびバイナリ配布のいずれの場合も、本ファイルならびに [`LICENSE`](LICENSE)、[`NOTICE`](NOTICE) を同梱してください。
 
-一覧は `scala-cli compile . --print-class-path` が示す実行時クラスパスに基づいており、各ライセンスは配布物の POM および jar 内の `META-INF/LICENSE` から確認したものです。
+記載している一覧は `scala-cli compile . --print-class-path` が出力するランタイムクラスパスに基づいており、各ライセンスは各ライブラリの POM および JAR ファイル内の `META-INF/LICENSE` にて確認したものです。
 
-## 実行時に同梱される依存
+## 実行時に同梱される依存ライブラリ
 
 | ライブラリ | バージョン | ライセンス |
 |---|---|---|
@@ -24,33 +24,33 @@ pdfgate の配布バイナリは GraalVM native-image で生成されており�
 | org.scala-lang:scala3-library | 3.3.8 | Apache-2.0 |
 | org.scala-lang:scala-library | 2.13.18 | Apache-2.0 |
 
-<sup>†</sup> pdfbox は AWT 依存を除去した改変版 (`lib/pdfbox-3.0.7-noawt.jar`) として同梱しています。改変の内容と理由は [README](README.md#なぜ-patched-jar-が必要か) および [`tools/patch-pdfbox.scala`](tools/patch-pdfbox.scala) を参照してください。Apache-2.0 第 4 条(b)に従い、改変を行った旨をここに明示します。
+<sup>†</sup> PDFBox は AWT 依存を除去した改変版 (`lib/pdfbox-3.0.7-noawt.jar`) を同梱しています。改変の目的および詳細な実装内容については、[README](README.md#なぜ-patched-jar-が必要か) および [`tools/patch-pdfbox.scala`](tools/patch-pdfbox.scala) を参照してください。Apache License 2.0 第 4 条 (b) に基づき、改変を行った旨をここに明記します。
 
-## ビルド時のみ使用（バイナリには含まれない）
+## ビルド時のみ使用（バイナリには含まれません）
 
 | ライブラリ | バージョン | ライセンス | 用途 |
 |---|---|---|---|
-| org.ow2.asm:asm-tree | 9.8 | BSD-3-Clause | pdfbox jar のバイトコード改変 |
-| org.scalameta:munit | 1.1.1 | Apache-2.0 | テスト |
-| GraalVM Community Edition | 21.0.2 | GPLv2+CPE | ネイティブビルド<sup>‡</sup> |
+| org.ow2.asm:asm-tree | 9.8 | BSD-3-Clause | PDFBox JAR のバイトコード改変 |
+| org.scalameta:munit | 1.1.1 | Apache-2.0 | 単体テスト |
+| GraalVM Community Edition | 21.0.2 | GPLv2+CPE | ネイティブコンパイル<sup>‡</sup> |
 
-<sup>‡</sup> GraalVM CE は GPLv2 with Classpath Exception です。Classpath Exception により、native-image で生成したバイナリに GPL は伝播しません。
+<sup>‡</sup> GraalVM Community Edition は GPLv2 with Classpath Exception (CPE) の下で提供されています。Classpath Exception の適用により、native-image で生成された単体バイナリに GPL の効力は伝播（波及）しません。
 
 ## 同梱されるデータ・フォント
 
-pdfbox / fontbox 経由で、以下のデータがバイナリに埋め込まれます（`resources/META-INF/native-image/pdfgate/resource-config.json` 参照）。
+PDFBox および FontBox を経由して、以下のデータがバイナリ内に静的に埋め込まれます（`resources/META-INF/native-image/pdfgate/resource-config.json` 参照）。
 
 - **Adobe Glyph List**、**Zapf Dingbats Glyph List** — Copyright 1997-2010 Adobe Systems Incorporated
 - **Unicode データ** (BidiMirroring, Scripts) — Copyright 1991-2017 Unicode, Inc.
 - **Liberation Sans (LiberationSans-Regular.ttf)** — SIL Open Font License 1.1
   - Digitized data copyright (c) 2010 Google Corporation, with Reserved Font Arimo, Tinos and Cousine
   - Copyright (c) 2012 Red Hat, Inc., with Reserved Font Name Liberation
-  - OFL 1.1 の全文は pdfbox jar の `META-INF/LICENSE` に含まれています。OFL はフォント単体での販売を禁じますが、ソフトウェアへのバンドル再配布は許可されています。
-- **Adobe 定義済み CMap** (`org/apache/fontbox/cmap/`) — CJK PDF のテキスト抽出に使用
+  - OFL 1.1 の全文は PDFBox JAR 内の `META-INF/LICENSE` に含まれています。OFL はフォント単体での商用販売を禁止していますが、ソフトウェアへのバンドルおよび再頒布は許可されています。
+- **Adobe 定義済み CMap** (`org/apache/fontbox/cmap/`) — CJK（日中韓）PDF のテキスト抽出に使用
 
 ## MIT ライセンス依存の著作権表示
 
-MIT ライセンスは全ての複製への著作権表示の添付を要求します。該当する表示は以下のとおりです。
+MIT ライセンスの条項に基づき、すべての複製物に著作権表示および許諾表示を同梱する必要があります。該当する各ライブラリの著作権表示は以下のとおりです。
 
 ```
 upickle, geny:
