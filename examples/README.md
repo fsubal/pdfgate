@@ -2,7 +2,9 @@
 
 本ディレクトリでは、`validate` サブコマンドの JSON 出力および exit code（0: 正常、1: ポリシー違反、2: 破損・解析不能、3: 使用法エラー）を活用した組み込み実装例を紹介します。出力 JSON の詳細なスキーマについては、[`../schemas/`](../schemas/) の JSON Schema を参照してください。
 
-- [`lambda-s3/`](lambda-s3/): S3 にアップロードされた PDF を隔離環境（AWS Lambda コンテナ）内で検査し、判定結果に応じてオブジェクトへのタグ付けや隔離用バケットへの移動を行う構成例
+- S3 にアップロードされた PDF を隔離環境（AWS Lambda コンテナ）内で検査し、判定結果に応じてオブジェクトへのタグ付けや隔離用バケットへの移動を行う構成例。同じ処理を 2 つの言語で実装しています
+  - [`lambda-s3-python/`](lambda-s3-python/): Python（boto3）版
+  - [`lambda-s3-nodejs/`](lambda-s3-nodejs/): Node.js（AWS SDK for JavaScript v3）版。子プロセスのタイムアウト時は SIGKILL で確実に停止させる
 - [`rails-activestorage/`](rails-activestorage/): Rails アプリケーションにおいて、ActiveStorage の添付ファイルをクラウドストレージへ保存する前に、カスタムバリデータを用いて pdfgate による安全検証を実行する実装例
 
 ## 運用の基本原則

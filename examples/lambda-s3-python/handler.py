@@ -1,4 +1,5 @@
-"""S3 の ObjectCreated イベントをトリガーに起動し、アップロードされた PDF を pdfgate で検査する Lambda ハンドラー。
+"""S3 の ObjectCreated イベントをトリガーに起動し、アップロードされた PDF を pdfgate で検査する Lambda ハンドラー（Python 版）。
+処理内容は ../lambda-s3-nodejs/handler.mjs（Node.js 版）と同等です。
 
 検査結果に応じた処理:
   - クリーン（問題なし）: オブジェクトに scan-status=clean タグを付与
@@ -16,6 +17,7 @@
 
 import json
 import os
+import re
 import subprocess
 import urllib.parse
 
@@ -69,7 +71,7 @@ def inspect_object(bucket: str, key: str) -> dict:
             Key=key,
             Tagging={"TagSet": [
                 {"Key": "scan-status", "Value": "clean"},
-                {"Key": "scan-warnings", "Value": ",".join(warns)[:255] or "none"},
+                {"Key": "scan-warnings", "Value": tag_value(" ".join(warns)) or "none"},
             ]},
         )
         return {"key": key, "status": "clean", "warnings": warns}
@@ -77,10 +79,35 @@ def inspect_object(bucket: str, key: str) -> dict:
     if proc.returncode == 1:
         report = json.loads(proc.stdout)
         denied = [i["code"] for i in report["issues"] if i["severity"] == "deny"]
-        return quarantine(bucket, key, reason="policy-violation", detail=",".join(denied))
+        return quarantine(bucket, key, reason="policy-violation", detail=" ".join(denied))
 
     # exit code 2（破損・解析不能）および想定外の終了コードはすべて隔離
-    return quarantine(bucket, key, reason="unparseable", detail=proc.stdout[:255])
+    return quarantine(bucket, key, reason="unparseable", detail=error_code(proc))
+
+
+def error_code(proc: subprocess.CompletedProcess) -> str:
+    """exit code 2 の場合は error.code（parse-failure など）を、それ以外は終了状態を返す"""
+    try:
+        code = (json.loads(proc.stdout).get("error") or {}).get("code")
+        if code:
+            return code
+    except (ValueError, AttributeError):
+        pass  # JSON でなければ終了状態で代替する
+    if proc.returncode < 0:
+        return f"signal {-proc.returncode}"
+    return f"exit {proc.returncode}"
+
+
+# S3 のタグ値に使えない文字（英数字・空白・+ - = . _ : / @ 以外）
+_TAG_UNSAFE = re.compile(r"[^\w +\-=.:/@]")
+
+
+def tag_value(s: str) -> str:
+    """S3 のタグ値として使える文字に揃え、256 文字以内に切り詰める。
+
+    使えない文字を含むと PutObjectTagging / CopyObject が InvalidTag で失敗するため。
+    """
+    return _TAG_UNSAFE.sub("_", s)[:256]
 
 
 def quarantine(bucket: str, key: str, reason: str, detail: str) -> dict:
@@ -89,7 +116,7 @@ def quarantine(bucket: str, key: str, reason: str, detail: str) -> dict:
         Key=f"{bucket}/{key}",
         CopySource={"Bucket": bucket, "Key": key},
         TaggingDirective="REPLACE",
-        Tagging=urllib.parse.urlencode({"scan-status": reason, "scan-detail": detail[:255]}),
+        Tagging=urllib.parse.urlencode({"scan-status": reason, "scan-detail": tag_value(detail)}),
     )
     s3.delete_object(Bucket=bucket, Key=key)
     return {"key": key, "status": "quarantined", "reason": reason, "detail": detail}

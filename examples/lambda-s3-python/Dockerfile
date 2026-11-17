@@ -1,4 +1,4 @@
-# 検査専用 Lambda のコンテナイメージ。
+# 検査専用 Lambda のコンテナイメージ（Python 版）。
 # pdfgate は JVM 不要の単一バイナリなので、ランタイムに Python を選んでも
 # イメージには Java が一切入らない。
 FROM public.ecr.aws/lambda/python:3.13
